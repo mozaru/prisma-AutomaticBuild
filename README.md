@@ -25,7 +25,7 @@ precisa estar cadastrado e ativado na plataforma do prisma
 # Arquivo de configuracao modelo
 
 este arquivo deve se chamar "config.json" e deve estar na raiz do projeto mzdl
-veja um exemplo de projeto (aqui - agenda)[https://github.com/mozaru/prisma-agenda]
+veja um exemplo de projeto [aqui - agenda](https://github.com/mozaru/prisma-agenda)
 
 
 ~~~
