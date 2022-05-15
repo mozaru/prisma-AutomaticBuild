@@ -15,9 +15,9 @@ precisa estar cadastrado e ativado na plataforma do prisma
 * PRISM_DEV_PLAT_INPUT_PATH    - diretorio local onde estao os arquivos mzdl e o arquivo config.json
 
 ## ex no windows:
-  set PRISM_DEV_PLAT_EMAIL=meuemail@teste.com
-  set PRISM_DEV_PLAT_PASSWORD=minhasenha
-  set PRISM_DEV_PLAT_INPUT_PATH=c:\projetos\teste_prima\src_mz
+* set PRISM_DEV_PLAT_EMAIL=meuemail@teste.com
+* set PRISM_DEV_PLAT_PASSWORD=minhasenha
+* set PRISM_DEV_PLAT_INPUT_PATH=c:\projetos\teste_prima\src_mz
 
 ## executar 
   node index.js
