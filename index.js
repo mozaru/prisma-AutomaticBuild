@@ -5,6 +5,7 @@ const path = require('path');
 const AdmZip = require('adm-zip');
 const uuid = require('uuid');
 const process = require('process');
+const prettier = require("prettier");
 
 const URL_BASE = 'https://prism-dev-platform.herokuapp.com/';
 //const URL_BASE = 'https://localhost:1080/';
@@ -14,8 +15,6 @@ var PASSWORD = process.env.PRISM_DEV_PLAT_PASSWORD;
 var INPUT_PATH = process.env.PRISM_DEV_PLAT_INPUT_PATH;
 
 const TEMP_FILE = process.env.PRISM_DEV_PLAT_TEMP_PATH?path.join(process.env.PRISM_DEV_PLAT_TEMP_PATH,'temp.zip'):'temp.zip';
-
-console.log(process.env);
 
 if (!USER_NAME || !PASSWORD || !INPUT_PATH) { 
     console.error("Falha nos parametros!");
@@ -179,8 +178,17 @@ async function buildProject(inputDir){
                         const targetName = key===''?(t.outputFile?t.outputFile:path.basename(file, path.extname(file))+"."+r.defaultExtension):key;
                         const baseOutputPath = (t.outputPath===''|| !t.outputPath)?path.join(outputPath,l.outputBasePath):path.join(outputPath,l.outputBasePath, t.outputPath);
                         if (!fs.existsSync(baseOutputPath))
-                            fs.mkdirSync(baseOutputPath,{ recursive: true });   
-                        fs.writeFileSync(path.join(baseOutputPath,targetName),r.files[key],'utf-8');
+                            fs.mkdirSync(baseOutputPath,{ recursive: true });
+						const fullPathFile = path.join(baseOutputPath,targetName);
+						console.log("PRETTIER ",fullPathFile);
+						let fileContent = r.files[key];
+						fs.writeFileSync(fullPathFile,fileContent,'utf-8');
+						try{
+						const prettierConfig = await prettier.resolveConfig(fullPathFile);
+						console.log("PRETTIER config",prettierConfig);
+						fileContent = await prettier.format(fileContent, {endOfLine: 'auto', tabWidth: 4, embeddedLanguageFormatting:'auto', filepath: fullPathFile});
+                        fs.writeFileSync(fullPathFile,fileContent,'utf-8');
+						}catch(err){}
                         console.log("generate file: ",path.join(baseOutputPath,targetName));
                     }
                 }
