@@ -184,10 +184,10 @@ async function buildProject(inputDir){
 						let fileContent = r.files[key];
 						fs.writeFileSync(fullPathFile,fileContent,'utf-8');
 						try{
-						const prettierConfig = await prettier.resolveConfig(fullPathFile);
-						console.log("PRETTIER config",prettierConfig);
-						fileContent = await prettier.format(fileContent, {endOfLine: 'auto', tabWidth: 4, embeddedLanguageFormatting:'auto', filepath: fullPathFile});
-                        fs.writeFileSync(fullPathFile,fileContent,'utf-8');
+						    const prettierConfig = prettier.resolveConfig.sync(fullPathFile);
+						    console.log("PRETTIER config",prettierConfig);
+						    fileContent = prettier.format(fileContent, {endOfLine: 'auto', tabWidth: 4, embeddedLanguageFormatting:'auto', filepath: fullPathFile});
+                            fs.writeFileSync(fullPathFile,fileContent,'utf-8');
 						}catch(err){}
                         console.log("generate file: ",path.join(baseOutputPath,targetName));
                     }
