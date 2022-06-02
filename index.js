@@ -131,6 +131,29 @@ async function generateLayer(outputDir, variables, url) {
     return null;
 }*/
 
+
+function includeExternalFiles(content, inputDir)
+{
+    var r = new RegExp('^.*\<[^\>]+\>.*','gm');
+    var match;
+    var used=[];
+    while (match = r.exec(content))
+    {
+        const m = match[0];
+        const lib = m.trim().replace(/^\<+|\>+$/g, '');
+        if (!used.includes(lib))
+        {
+            used.push(lib);
+            const fileName = path.join.apply(null,[inputDir].concat(lib.split('.')))+'.mzdl'; 
+            const contentExt = fs.readFileSync(fileName, 'utf-8');
+            content = content.replace(m,contentExt);
+        } else 
+            content = content.replace(m,'');    
+        r = new RegExp('^.*\<[^\>]+\>.*','gm');
+    }
+    return content;
+}
+
 async function buildProject(inputDir){
     const original = process.cwd();
     process.chdir(inputDir);
@@ -156,6 +179,7 @@ async function buildProject(inputDir){
         }
     }
     let creditos=0;
+    let variaveis = {};
     for(const l of profile.layers)
     {
         console.log("transpile layer ",l.name);
@@ -165,13 +189,15 @@ async function buildProject(inputDir){
                 if (file.endsWith('.mzdl'))
                 {
                     console.log("transpile file: ",file);
-                    const content = fs.readFileSync(path.join(inputDir,t.inputPath,file), 'utf-8');
-                    const r = await Transpiler(content, t.transpiler, file);
+                    let content = fs.readFileSync(path.join(inputDir,t.inputPath,file), 'utf-8');
+                    content = includeExternalFiles(content, path.join(inputDir,t.inputPath));
+                    const r = await Transpiler(content, t.transpiler, file, variaveis);
                     if (r.message)
                     {
                         console.error(r.message);
                         return;
                     }
+                    variaveis = r.variaveis;
                     creditos = r.creditos;
                     for(const key in r.files)
                     {
@@ -180,12 +206,10 @@ async function buildProject(inputDir){
                         if (!fs.existsSync(baseOutputPath))
                             fs.mkdirSync(baseOutputPath,{ recursive: true });
 						const fullPathFile = path.join(baseOutputPath,targetName);
-						console.log("PRETTIER ",fullPathFile);
 						let fileContent = r.files[key];
 						fs.writeFileSync(fullPathFile,fileContent,'utf-8');
 						try{
 						    const prettierConfig = prettier.resolveConfig.sync(fullPathFile);
-						    console.log("PRETTIER config",prettierConfig);
 						    fileContent = prettier.format(fileContent, {endOfLine: 'auto', tabWidth: 4, embeddedLanguageFormatting:'auto', filepath: fullPathFile});
                             fs.writeFileSync(fullPathFile,fileContent,'utf-8');
 						}catch(err){}
@@ -266,11 +290,11 @@ async function getProfile(profile){
     return JSON.parse(resp.config);
 }
 
-async function Transpiler(source, technicalName, fileName){
+async function Transpiler(source, technicalName, fileName, variaveis){
     source = Buffer.from(source, 'utf-8').toString('base64');
     if (!access_token)
         await login(USER_NAME,PASSWORD);
-    let resp = await callApiPost(`${URL_BASE}api/transpile`,{"codeBase64":source, "TechnicalName": technicalName, "InputFileName":fileName});
+    let resp = await callApiPost(`${URL_BASE}api/transpile`,{"codeBase64":source, "TechnicalName": technicalName, "InputFileName":fileName, "variaveis":variaveis});
     if (resp && resp.files)
         for(const key in resp.files)
             if (resp.files[key]==='')
