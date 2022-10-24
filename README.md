@@ -8,6 +8,8 @@ tool for automatic code build on the prism development platform It integrates wi
 precisa estar cadastrado e ativado na plataforma do prisma
 [prisma.dev.br](https://prism-dev-platform.herokuapp.com/)
 
+veja o [video no youtube](https://youtu.be/n7Wb7HO09JU)
+
 ## precisa configurar as variaveis de ambiente
 
 * PRISM_DEV_PLAT_EMAIL         - com o email cadastrado
