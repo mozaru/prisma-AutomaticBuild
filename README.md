@@ -1,4 +1,4 @@
-# Build Automático do Prisma
+# Build Automático do Prisma [![Hits](https://hits.seeyoufarm.com/api/count/incr/badge.svg?url=https%3A%2F%2Fgithub.com%2Fmozaru%2Fprisma-AutomaticBuild%2Fhit-counter&count_bg=%2379C83D&title_bg=%23555555&icon=&icon_color=%23E7E7E7&title=hits&edge_flat=false)](https://hits.seeyoufarm.com)
 
 ## abstract
 tool for automatic code build on the prism development platform It integrates with the platform website, located at http://www.prisma.dev.br/
