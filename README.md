@@ -3,18 +3,21 @@
 ## abstract
 tool for automatic code build on the prism development platform It integrates with the platform website, located at http://www.prisma.dev.br/
 
-
 ## requisitos
+**Softwares:**  
+[node](https://nodejs.org/en/download/)  
+[git (opcional)](https://git-scm.com/)  
+
 precisa estar cadastrado e ativado na plataforma do prisma
 [prisma.dev.br](https://prism-dev-platform.herokuapp.com/)
 
-veja o [video no youtube](https://youtu.be/n7Wb7HO09JU)
+[video passo-a-passo](https://youtu.be/n7Wb7HO09JU)
 
 ## precisa configurar as variaveis de ambiente
 
-* PRISM_DEV_PLAT_EMAIL         - com o email cadastrado
-* PRISM_DEV_PLAT_PASSWORD      - com a senha do usuario
-* PRISM_DEV_PLAT_INPUT_PATH    - diretorio local onde estao os arquivos mzdl e o arquivo config.json
+* PRISM_DEV_PLAT_EMAIL=         - com o email cadastrado
+* PRISM_DEV_PLAT_PASSWORD=      - com a senha do usuario
+* PRISM_DEV_PLAT_INPUT_PATH=    - diretorio local onde estao os arquivos mzdl e o arquivo config.json
 
 ## ex no windows:
 * set PRISM_DEV_PLAT_EMAIL=meuemail@teste.com
