@@ -6,7 +6,7 @@ tool for automatic code build on the prism development platform It integrates wi
 
 ## requisitos
 precisa estar cadastrado e ativado na plataforma do prisma
-[prisma.dev.br](https://prism-dev-platform.herokuapp.com/)
+[prisma.dev.br](https://www.prisma.dev.br/)
 
 veja o [video no youtube](https://youtu.be/n7Wb7HO09JU)
 
