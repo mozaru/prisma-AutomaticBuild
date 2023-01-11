@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 const https = require('https'); // or 'https' for https:// URLs
 const fs = require('fs');
 const request = require('request');

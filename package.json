@@ -1,8 +1,15 @@
 {
-  "name": "create-mzdl-target",
+  "name": "devPrism",
   "version": "1.0.0",
   "description": "",
   "main": "index.js",
+  "bin": {
+    "devPrism": "index.js",
+    "prismaDev": "index.js"
+  },
+  "engines": {
+    "node": ">=10"
+  },
   "scripts": {
     "start": "node index.js",
     "test": "echo \"Error: no test specified\" && exit 1"
