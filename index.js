@@ -185,6 +185,29 @@ function writeBuildFile(fullpath, dic){
     fs.writeFileSync(fullpath,JSON.stringify(vet),'utf-8');
 }
 
+function readDicFile(fullpath){
+    var dictionary = {};
+    if (fs.existsSync(fullpath)){
+        const items = fs.readFileSync(fullpath,'utf-8').split("\n");
+        for (var i = 0; i < items.length; i++) {
+            const pos = items[i].indexOf(":");
+            const key = items[i].substring(0,pos);
+            const value = items[i].substring(pos + 1);
+            if (key)
+                dictionary[key] = value;
+        }
+    }
+    console.log(dictionary);
+    return dictionary;
+}
+
+function writeDicFile(fullpath, dic){
+    var content="";
+    for(const key of Object.keys(dic))
+        content += key+':'+dic[key]+"\n";
+    fs.writeFileSync(fullpath,content,'utf-8');
+}
+
 async function analiseBuild(inputDir){
     const original = process.cwd();
     console.log("Analisando arquivos modificados");
@@ -253,7 +276,7 @@ async function buildProject(inputDir){
         }
     }
     let creditos=0;
-    let variaveis = {};
+    let variaveis = readDicFile(path.join(inputDir,".vars"));
     let dict = readBuildFile(path.join(inputDir,".mzdlbuild"));
     for(const l of profile.layers)
     {
@@ -303,6 +326,7 @@ async function buildProject(inputDir){
         }
     }
     writeBuildFile(path.join(inputDir,".mzdlbuild"),dict);
+    writeDicFile(path.join(inputDir,".vars"),variaveis);
     console.log("Creditos: ",creditos);    
 }
 
