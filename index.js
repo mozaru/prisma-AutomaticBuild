@@ -197,7 +197,6 @@ function readDicFile(fullpath){
                 dictionary[key] = value;
         }
     }
-    console.log(dictionary);
     return dictionary;
 }
 
