@@ -140,7 +140,7 @@ async function generateLayer(outputDir, variables, url) {
 
 function includeExternalFiles(content, inputDir)
 {
-    var r = new RegExp('^.*\<[^\>]+\>.*','gm');
+    var r = new RegExp('^.*\<[^\>\n]+\>.*','gm');
     var match;
     var used=[];
     while (match = r.exec(content))
@@ -150,12 +150,12 @@ function includeExternalFiles(content, inputDir)
         if (!used.includes(lib))
         {
             used.push(lib);
-            const fileName = path.join.apply(null,[inputDir].concat(lib.split('.')))+'.mzdl'; 
+            const fileName = path.join.apply(null,[inputDir].concat(lib.split('.')))+'.mzdl';
             const contentExt = fs.readFileSync(fileName, 'utf-8');
             content = content.replace(m,contentExt);
         } else 
             content = content.replace(m,'');    
-        r = new RegExp('^.*\<[^\>]+\>.*','gm');
+        r = new RegExp('^.*\<[^\>\n]+\>.*','gm');
     }
     return content;
 }
