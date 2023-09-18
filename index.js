@@ -391,12 +391,6 @@ async function buildProject(inputDir){
                                 fs.writeFileSync(fullPathFile,fileContent,'utf-8');
                                 console.log("generate file: ",path.join(baseOutputPath,targetName));
                             }
-                            //try{
-                            //    const prettierConfig = prettier.resolveConfig.sync(fullPathFile);
-                            //    fileContent = prettier.format(fileContent, {endOfLine: 'auto', tabWidth: 4, embeddedLanguageFormatting:'auto', filepath: fullPathFile});
-                            //    fs.writeFileSync(fullPathFile,fileContent,'utf-8');
-                            //}catch(err){}
-                            
                         }
                     }
                 }
