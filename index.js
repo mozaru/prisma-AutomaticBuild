@@ -6,7 +6,6 @@ const path = require('path');
 const AdmZip = require('adm-zip');
 const uuid = require('uuid');
 const process = require('process');
-const prettier = require("prettier");
 const { isMainThread } = require('worker_threads');
 const { Console } = require('console');
 const chalk=require("chalk");
