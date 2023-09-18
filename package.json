@@ -6,7 +6,7 @@
   "bin": {
     "devPrism": "index.js",
     "prismaDev": "index.js",
-    "prisma": "index.js",
+    "prisma": "index.js"
   },
   "engines": {
     "node": ">=10"
