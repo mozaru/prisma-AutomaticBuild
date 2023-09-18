@@ -140,7 +140,7 @@ async function generateLayer(outputDir, variables, url) {
 
 function includeExternalFiles(content, inputDir)
 {
-    var r = new RegExp('^.*\<[^\>]+\>.*','gm');
+    var r = new RegExp('^\s*\<[^\>\n]+\>\s','gm');
     var match;
     var used=[];
     while (match = r.exec(content))
@@ -150,12 +150,12 @@ function includeExternalFiles(content, inputDir)
         if (!used.includes(lib))
         {
             used.push(lib);
-            const fileName = path.join.apply(null,[inputDir].concat(lib.split('.')))+'.mzdl'; 
+            const fileName = path.join.apply(null,[inputDir].concat(lib.split('.')))+'.mzdl';
             const contentExt = fs.readFileSync(fileName, 'utf-8');
             content = content.replace(m,contentExt);
         } else 
             content = content.replace(m,'');    
-        r = new RegExp('^.*\<[^\>]+\>.*','gm');
+        r = new RegExp('^.*\<[^\>\n]+\>.*','gm');
     }
     return content;
 }
@@ -178,11 +178,15 @@ function readBuildFile(fullpath){
 
     return dictionary;
 }
+
 function writeBuildFile(fullpath, dic){
+    const dir = path.dirname(fullpath);
+    if (!fs.existsSync(dir))
+       fs.mkdirSync(dir,{ recursive: true });
     var vet=[];
     for(const key of Object.keys(dic))
         vet.push(dic[key]);
-    fs.writeFileSync(fullpath,JSON.stringify(vet),'utf-8');
+    fs.writeFileSync(fullpath,JSON.stringify(vet,null, 4),'utf-8');
 }
 
 function readDicFile(fullpath){
@@ -197,26 +201,59 @@ function readDicFile(fullpath){
                 dictionary[key] = value;
         }
     }
-    console.log(dictionary);
     return dictionary;
 }
 
 function writeDicFile(fullpath, dic){
     var content="";
+    const dir = path.dirname(fullpath);
+    if (!fs.existsSync(dir))
+       fs.mkdirSync(dir,{ recursive: true });;
     for(const key of Object.keys(dic))
         content += key+':'+dic[key]+"\n";
     fs.writeFileSync(fullpath,content,'utf-8');
+}
+function clearName(fileName)
+{
+    return fileName.replace(/[^\w]/g,'_');
+}
+function saveCacheFile(fullpath, transpiler,  targetName, content)
+{
+    if (!fs.existsSync(fullpath))
+        fs.mkdirSync(fullpath,{ recursive: true });
+    const name = path.join(fullpath,clearName(transpiler)+'-'+targetName);
+    fs.writeFileSync(name,content,'utf-8');
+}
+
+function loadCacheFile(fullpath, transpiler, targetName)
+{
+    if (!fs.existsSync(fullpath)) return null;
+    const name = path.join(fullpath,clearName(transpiler)+'-'+targetName);
+    if (!fs.existsSync(name)) return null;
+    return fs.readFileSync(name,'utf-8').split("\n");
+}
+
+function merge(fullpath, merge, targetName, newContent)
+{
+    content = loadCacheFile(fullpath, merge.transpiler, targetName);
+    newContent = newContent.split('\n');
+    if (content){
+      line = merge.lineTarget<0?content.length+merge.lineTarget+1:merge.lineTarget-1;
+      newContent = content.slice(0,line).concat(newContent.slice(merge.startLineSource-1, merge.endLineSource), content.slice(line));
+    }
+    return newContent.join('\n');
 }
 
 async function analiseBuild(inputDir){
     const original = process.cwd();
     console.log("Analisando arquivos modificados");
     process.chdir(inputDir);
-    const config = JSON.parse(fs.readFileSync(path.join(inputDir,"config.json"),'utf-8'));
+    const nomeConfig = fs.existsSync(path.join(inputDir,"prisma.json"))?"prisma.json":"config.json";
+    const config = JSON.parse(fs.readFileSync(path.join(inputDir,nomeConfig),'utf-8'));
     const profile = await getProfile(config.profile);
     process.chdir(original);
     let response = [];
-    const dict = readBuildFile(path.join(inputDir,".mzdlbuild"))
+    const dict = readBuildFile(path.join(inputDir,".prisma","mzdlbuild"))
     for(const l of profile.layers)
     {
         console.log("analisando layer ",l.name);
@@ -251,11 +288,41 @@ async function analiseBuild(inputDir){
     return response;
 }
 
+function ajustaMergeReferences(profile)
+{
+    var dic=[];
+    for(const l of profile.layers)
+        for(const t of l.transpilers)
+            dic[t.transpiler] = t;
+    for(const l of profile.layers)
+        for(const t of l.transpilers)
+        {
+            if (t.merge && t.merge.transpiler && dic[t.merge.transpiler])
+            {
+               dic[t.merge.transpiler].cached = true;
+               if (!dic[t.merge.transpiler].linkTranspile) 
+                    dic[t.merge.transpiler].linkTranspile = [];
+               dic[t.merge.transpiler].linkTranspile.push(t);
+            }
+            if (t.merge && t.merge.transpiler && dic[t.merge.transpiler])
+            {
+                t.cached = true;
+                if (!t.linkTranspile) 
+                     t.linkTranspile = [];
+                t.linkTranspile.push(dic[t.merge.transpiler]);
+             }
+         }
+}
+
 async function buildProject(inputDir){
     const original = process.cwd();
     process.chdir(inputDir);
-    const config = JSON.parse(fs.readFileSync(path.join(inputDir,"config.json"),'utf-8'));
+    const nomeConfig = fs.existsSync(path.join(inputDir,"prisma.json"))?"prisma.json":"config.json";
+    const config = JSON.parse(fs.readFileSync(path.join(inputDir,nomeConfig),'utf-8'));
     const profile = await getProfile(config.profile);
+
+    ajustaMergeReferences(profile);
+
     for(const name in config.constants){
         if (name.toLowerCase().startsWith('guid') && config.constants[name]=='auto')
             config.constants[name] = uuid.v4();
@@ -276,8 +343,8 @@ async function buildProject(inputDir){
         }
     }
     let creditos=0;
-    let variaveis = readDicFile(path.join(inputDir,".vars"));
-    let dict = readBuildFile(path.join(inputDir,".mzdlbuild"));
+    let variaveis = readDicFile(path.join(inputDir,".prisma","vars"));
+    let dict = readBuildFile(path.join(inputDir,".prisma","mzdlbuild"));
     for(const l of profile.layers)
     {
         console.log("transpile layer ",l.name);
@@ -313,20 +380,31 @@ async function buildProject(inputDir){
                                 fs.mkdirSync(baseOutputPath,{ recursive: true });
                             const fullPathFile = path.join(baseOutputPath,targetName);
                             let fileContent = r.files[key];
-                            fs.writeFileSync(fullPathFile,fileContent,'utf-8');
-                            try{
-                                const prettierConfig = prettier.resolveConfig.sync(fullPathFile);
-                                fileContent = prettier.format(fileContent, {endOfLine: 'auto', tabWidth: 4, embeddedLanguageFormatting:'auto', filepath: fullPathFile});
+                            if (t.cached) {
+                                saveCacheFile(path.join(inputDir,".prisma"), t.transpiler, targetName, fileContent);
+                                console.log("cache file: ",path.join(baseOutputPath,targetName));
+                            }
+                            if (t.merge) {
+                                fileContent = merge(path.join(inputDir,".prisma"), t.merge, targetName, fileContent);
                                 fs.writeFileSync(fullPathFile,fileContent,'utf-8');
-                            }catch(err){}
-                            console.log("generate file: ",path.join(baseOutputPath,targetName));
+                                console.log("add content in file: ",path.join(baseOutputPath,targetName));
+                            } else {
+                                fs.writeFileSync(fullPathFile,fileContent,'utf-8');
+                                console.log("generate file: ",path.join(baseOutputPath,targetName));
+                            }
+                            //try{
+                            //    const prettierConfig = prettier.resolveConfig.sync(fullPathFile);
+                            //    fileContent = prettier.format(fileContent, {endOfLine: 'auto', tabWidth: 4, embeddedLanguageFormatting:'auto', filepath: fullPathFile});
+                            //    fs.writeFileSync(fullPathFile,fileContent,'utf-8');
+                            //}catch(err){}
+                            
                         }
                     }
                 }
         }
     }
-    writeBuildFile(path.join(inputDir,".mzdlbuild"),dict);
-    writeDicFile(path.join(inputDir,".vars"),variaveis);
+    writeBuildFile(path.join(inputDir,".prisma","mzdlbuild"),dict);
+    writeDicFile(path.join(inputDir,".prisma","vars"),variaveis);
     console.log("Creditos: ",creditos);    
 }
 
@@ -502,7 +580,7 @@ async function main()
 
     if (config.clear)
     {
-        const file = path.join(INPUT_PATH,".mzdlbuild");
+        const file = path.join(INPUT_PATH,".prisma","mzdlbuild");
         if (fs.existsSync(file))
             fs.rmSync(file);
         return;
