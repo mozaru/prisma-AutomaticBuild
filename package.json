@@ -4,9 +4,6 @@
   "description": "",
   "main": "index.js",
   "bin": {
-    "devPrism": "index.js",
-    "prismaDev": "index.js",
-    "prisma": "index.js"
     "prism-cli": "index.js"
   },
   "engines": {
