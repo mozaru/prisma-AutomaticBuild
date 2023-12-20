@@ -258,7 +258,8 @@ function openPrismaProject(inputDir)
         nomeConfig=path.join(inputDir,"prisma.json");
     else
         nomeConfig = path.join(inputDir,"config.json");
-    const config = JSON.parse(fs.readFileSync(nomeConfig,'utf-8'));
+    const resp = fs.readFileSync(nomeConfig,'utf-8');
+    const config = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
     return config;
 }
 
@@ -276,30 +277,31 @@ async function analiseBuild(inputDir){
         console.log("analisando layer ",l.name);
         for(const t of l.transpilers)
         {
-            for(const file of fs.readdirSync(path.join(inputDir,t.inputPath)))
-            {
-                if (file.endsWith('.mzdl'))
+            if (fs.existsSync(path.join(inputDir,t.inputPath)))
+                for(const file of fs.readdirSync(path.join(inputDir,t.inputPath)))
                 {
-                    const fullPathFile = path.join(inputDir,t.inputPath,file);
-                    const relativePathFile = fullPathFile.substring(inputDir.length)
-                    const key = t.transpiler+":"+relativePathFile; 
-                    const lastModify = fs.statSync(fullPathFile).mtimeMs;
-                    if (!dict[key] || lastModify != dict[key].lastModify)
+                    if (file.endsWith('.mzdl'))
                     {
-                        let fileMZDL = response.find( x => x.fullPath==relativePathFile );
-                        fileMZDL = fileMZDL? fileMZDL : { fullPath:relativePathFile, lines:0, transpilations:0, transpilers: []};
-                        if (fileMZDL.transpilations==0)
+                        const fullPathFile = path.join(inputDir,t.inputPath,file);
+                        const relativePathFile = fullPathFile.substring(inputDir.length)
+                        const key = t.transpiler+":"+relativePathFile; 
+                        const lastModify = fs.statSync(fullPathFile).mtimeMs;
+                        if (!dict[key] || lastModify != dict[key].lastModify)
                         {
-                            let content = fs.readFileSync(path.join(inputDir,t.inputPath,file), 'utf-8');
-                            content = includeExternalFiles(content, path.join(inputDir,t.inputPath));
-                            fileMZDL.lines = countLines(content);
-                            response.push(fileMZDL);
+                            let fileMZDL = response.find( x => x.fullPath==relativePathFile );
+                            fileMZDL = fileMZDL? fileMZDL : { fullPath:relativePathFile, lines:0, transpilations:0, transpilers: []};
+                            if (fileMZDL.transpilations==0)
+                            {
+                                let content = fs.readFileSync(path.join(inputDir,t.inputPath,file), 'utf-8');
+                                content = includeExternalFiles(content, path.join(inputDir,t.inputPath));
+                                fileMZDL.lines = countLines(content);
+                                response.push(fileMZDL);
+                            }
+                            fileMZDL.transpilations++;
+                            fileMZDL.transpilers.push(t.transpiler);
                         }
-                        fileMZDL.transpilations++;
-                        fileMZDL.transpilers.push(t.transpiler);
                     }
                 }
-            }
         }
     }
     return response;
@@ -483,7 +485,7 @@ async function getProfile(profile){
     console.log('Baixando profile:',profile);
     profile = encodeURIComponent(profile);
     let resp = await callApiGet(`${URL_BASE}api/profile/ByTechnicalName?TechnicalName=${profile}`);
-    resp = JSON.parse(resp.replace(/\\n|\\t/g,''));
+    resp = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
     console.log('Profile baixado');
     return JSON.parse(resp.config);
 }
@@ -507,6 +509,13 @@ async function listAppTypes()
     if (!access_token)
         await login(USER_NAME,PASSWORD);
     let resp = await callApiGet(`${URL_BASE}api/info/apptype`);
+    return JSON.parse(resp);
+}
+async function getAppType(id)
+{
+    if (!access_token)
+        await login(USER_NAME,PASSWORD);
+    let resp = await callApiGet(`${URL_BASE}api/info/apptype/${id}`);
     return JSON.parse(resp);
 }
 async function listLayers(appTypeName)
@@ -580,7 +589,7 @@ function processarParametros() {
             case '-d': cfg.download = x.substring(x.indexOf('=')+1).trim(); break;
             case '-f': cfg.forced = true;break;
             case '-l': cfg.list = x.substring(x.indexOf('=')+1).trim(); break;
-            case '-n': cfg.new = x.substring(x.indexOf('=')+1).trim(); break;
+            case '-new': cfg.new = x.substring(x.indexOf('=')+1).trim(); break;
             default  : console.log("chave invalida de configuracao: "+x);
                        cfg.error=true; 
                        break;
@@ -589,9 +598,135 @@ function processarParametros() {
     return cfg;
 }
 
-async function newProject(arg)
-{
+function technicalName(name){
+    return name.replace(/[^\w\d ]/g,'').replace(/ /g,'-');
+}
 
+function gerarChave(comprimento){
+    let s = ``;
+    const letras = "abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    while (s.length<comprimento)
+    {
+        const i = Math.trunc(Math.random()*letras.length);
+    	s+=letras[i];
+    }
+    return s;
+}
+
+async function createProject(project)
+{
+    const projectTechnicalName = technicalName(project.name);
+    if (fs.existsSync(projectTechnicalName))
+    {
+        console.log(`Diretorio ${projectTechnicalName} ja existe! o projeto não será criado!`);
+        return;
+    }    
+    fs.mkdirSync(projectTechnicalName);
+    let resp = await callApiGet(`${URL_BASE}api/profile/ByTechnicalName?TechnicalName=${encodeURIComponent(project.profile.name)}`);
+    resp = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
+    let configPrisma = resp.prismaProject;
+    configPrisma = configPrisma
+        .replaceAll("<PROJECT_NAME>",project.name)
+        .replaceAll("<PROJECT_TECHNICAL_NAME>",projectTechnicalName)
+        .replaceAll("<USER_NAME>",USER_NAME)
+        .replaceAll("<CHAVE_OAUTH>",gerarChave(32));
+    configPrisma = JSON.parse(configPrisma);
+    const sameDir = configPrisma.outputRootPath=="" || configPrisma.outputRootPath==".";
+    for(const name in configPrisma.constants){
+        if (name.toLowerCase().startsWith('guid') && configPrisma.constants[name]=='auto')
+            configPrisma.constants[name] = uuid.v4();
+    }
+    if (sameDir)
+        fs.writeFileSync(path.join(projectTechnicalName,projectTechnicalName+".prism"), JSON.stringify(configPrisma));
+    else
+    {
+        fs.mkdirSync(path.join(projectTechnicalName,"src-prism"));
+        fs.writeFileSync(path.join(projectTechnicalName,"src-prism",projectTechnicalName+".prism"), JSON.stringify(configPrisma));
+    }
+    const profile = JSON.parse(resp.config);
+    const inputDir = sameDir?projectTechnicalName:path.join(projectTechnicalName,"src-prism");
+    for(const l of profile.layers)
+    {
+        for(const t of l.transpilers)
+        {
+            if (!fs.existsSync(path.join(inputDir,t.inputPath)))
+                fs.mkdirSync(path.join(inputDir,t.inputPath));
+        }
+    }
+    console.log("Projeto criado com sucesso!");
+}
+
+async function configNewProject(arg)
+{
+    const AppTypeVet = await listAppTypes();
+    console.log("Criacao de Projeto");
+    let i = 1;
+    let resp = 0;
+    let name = "";
+    name = readlineSync.question(`Informe o nome do projeto? `).trim();
+    if (!name) return null;
+    do{
+        i = 1;
+        for(const appType of AppTypeVet)
+           console.log(i++,'-',appType.name);
+        resp = readlineSync.question("Informe o numero do tipo do projeto ou 0 para cancelar? ").toLowerCase();
+        try{resp = parseInt(resp);}catch(e){ console.log(e,resp);resp=-1};
+    }while(isNaN(resp) || resp<0 || resp>=i);
+    if (resp==0) return null;
+    const AppType = await getAppType(AppTypeVet[resp-1].id);
+    console.log("AppType:",AppType.name);
+    console.log("Camadas:", AppType.layers.map(x => x.name).join(", "));
+    let profiles = null;
+    for(const layer of AppType.layers) {
+        console.log(`Para a camada '${layer.name}' escolha a tecnologia a ser utilizada`);
+        const technologies=[];
+        for(const technology of layer.technologies)
+        {
+            if (profiles==null || profiles.filter( (x) => x.id==technology.idProfile ).length == 1)
+            {
+                const tecVet = technologies.filter( (x) => x.name==technology.name && x.version==technology.version );
+                if (tecVet.length == 0)
+                    technologies.push({name:technology.name, version:technology.version, profiles:[{id:technology.idProfile, name:technology.profile}]});
+                else
+                    tecVet[0].profiles.push({id:technology.idProfile, name:technology.profile});
+            }
+        }
+        do{
+            i = 1;
+            for(const technology of technologies)
+               console.log(i++,'-',technology.name, "(", technology.version,")");
+            resp = readlineSync.question(`Informe o numero da tecnologia para a camada '${layer.name}' ou 0 para cancelar? `).toLowerCase();
+            try{resp = parseInt(resp);}catch(e){ console.log(e,resp);resp=-1};
+        }while(isNaN(resp) || resp<0 || resp>=i);
+        if (resp==0) return null;
+        layer.technology = technologies[resp-1];
+        profiles = layer.technology.profiles;
+        console.log(`${layer.name}: ${layer.technology.name} (${layer.technology.version})`);
+    }
+    if (profiles.length==0)
+    {
+        console.log("\n\n infelizmente nenhum profile foi encrontado!\nPortanto o projeto nao pode ser criado!\n");	
+        return null;
+    } else if (profiles.length>1)
+    {
+        console.log(`\n\n infelizmente ${profiles.length} profiles foram encrontados!\nPortanto o projeto nao pode ser criado!\n`);	
+        return null;
+    }
+    const profile = profiles[0];
+    console.log("\n--------------------------------------");
+    console.log("Resumo do projeto",name);
+    console.log("--------------------------------------");
+    for(const layer of AppType.layers)
+        console.log(`${layer.name}: ${layer.technology.name} (${layer.technology.version})`);
+    console.log("--------------------------------------");
+    console.log(`profile selecionado:${profile.name}`);
+    console.log("--------------------------------------\n");
+    do{
+        resp = readlineSync.question(`Confirma a criacao deste projeto (S/N)? `).toLowerCase();
+    }while(resp!='s' && resp!='n' && resp!='y');
+    if (resp=='n') return null;
+    console.log("Criando projeto",name);
+    return { name:name, profile:profile};
 }
 
 async function list(arg)
@@ -687,9 +822,9 @@ async function main()
         console.log("-l                     list all available template projects");
         console.log("-l=<template>          list all layers name to template <template>");
         console.log("-l=<template>,<layer>  list all tecnologies to layer <layer> in template <template>");
-        console.log("-n                     create a new project");
-        console.log("-n=<name>              create a new project with name <name>");
-        console.log("-n=<name>,<profile>    create a new project with name <name> with profile <profile>");
+        console.log("-new                     create a new project");
+        console.log("-new=<name>              create a new project with name <name>");
+        console.log("-new=<name>,<profile>    create a new project with name <name> with profile <profile>");
         console.log("-i=<inputdir>          diretorio do projeto a ser transpilado");
         console.log('\n\n');
         return;
@@ -704,7 +839,9 @@ async function main()
 
     if (config.new)
     {
-        await newProject(config.new);
+        const project = await configNewProject(config.new);
+        if (project!=null)
+            createProject(project);
         return;
     } else if (config.list)
     {
