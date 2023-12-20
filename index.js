@@ -243,12 +243,30 @@ function merge(fullpath, merge, targetName, newContent)
     return newContent.join('\n');
 }
 
+function openPrismaProject(inputDir)
+{
+    let configs = [];
+    for(const file of fs.readdirSync(inputDir))
+        if (file.endsWith('.prism'))
+            configs.push(path.join(inputDir,file));
+    let nomeConfig="";
+    if (configs.length==1)
+        nomeConfig=configs[0];
+    else if (fs.existsSync(path.join(inputDir,"prism.json")))
+        nomeConfig=path.join(inputDir,"prism.json");
+    else if (fs.existsSync(path.join(inputDir,"prisma.json")))
+        nomeConfig=path.join(inputDir,"prisma.json");
+    else
+        nomeConfig = path.join(inputDir,"config.json");
+    const config = JSON.parse(fs.readFileSync(nomeConfig,'utf-8'));
+    return config;
+}
+
 async function analiseBuild(inputDir){
     const original = process.cwd();
     console.log("Analisando arquivos modificados");
     process.chdir(inputDir);
-    const nomeConfig = fs.existsSync(path.join(inputDir,"prisma.json"))?"prisma.json":"config.json";
-    const config = JSON.parse(fs.readFileSync(path.join(inputDir,nomeConfig),'utf-8'));
+    const config = openPrismaProject(inputDir);
     const profile = await getProfile(config.profile);
     process.chdir(original);
     let response = [];
@@ -316,8 +334,7 @@ function ajustaMergeReferences(profile)
 async function buildProject(inputDir){
     const original = process.cwd();
     process.chdir(inputDir);
-    const nomeConfig = fs.existsSync(path.join(inputDir,"prisma.json"))?"prisma.json":"config.json";
-    const config = JSON.parse(fs.readFileSync(path.join(inputDir,nomeConfig),'utf-8'));
+    const config = openPrismaProject(inputDir);
     const profile = await getProfile(config.profile);
 
     ajustaMergeReferences(profile);
@@ -485,6 +502,29 @@ async function Transpiler(source, technicalName, fileName, variaveis){
     return resp;
 }
 
+async function listAppTypes()
+{
+    if (!access_token)
+        await login(USER_NAME,PASSWORD);
+    let resp = await callApiGet(`${URL_BASE}api/info/apptype`);
+    return JSON.parse(resp);
+}
+async function listLayers(appTypeName)
+{
+    if (!access_token)
+        await login(USER_NAME,PASSWORD);
+    let resp = await callApiGet(`${URL_BASE}api/info/layers/${encodeURIComponent(appTypeName)}`);
+    return JSON.parse(resp);
+}
+async function listTecnologies(appTypeName, layerName)
+{
+    if (!access_token)
+        await login(USER_NAME,PASSWORD);
+    let resp = await callApiGet(`${URL_BASE}api/info/technologies/${encodeURIComponent(appTypeName)}/${encodeURIComponent(layerName)}`);
+    return JSON.parse(resp);
+}
+
+
 var readlineSync = require('readline-sync');
 const { CENFLG } = require('adm-zip/util/constants');
 const { compileFunction } = require('vm');
@@ -522,7 +562,7 @@ function mostrarConsumo(analise) {
 }
 
 function processarParametros() {
-    cfg = { ajuda:false, build:true, analise:false, clear:false, buildAll:false, inputDir:null, responseAll:null, error:false }
+    cfg = { ajuda:false, build:true, analise:false, clear:false, buildAll:false, inputDir:null, responseAll:null, download:null, list:null, new:null, forced:false, error:false }
     
     for(const x of process.argv.filter((val, index) => {return index>=2} ))
     {
@@ -537,6 +577,10 @@ function processarParametros() {
             case '-y': cfg.responseAll = 'y'; break;
             case '-n': cfg.responseAll = 'n'; break;
             case '-i': cfg.inputDir = x.substring(x.indexOf('=')+1).trim(); break;
+            case '-d': cfg.download = x.substring(x.indexOf('=')+1).trim(); break;
+            case '-f': cfg.forced = true;break;
+            case '-l': cfg.list = x.substring(x.indexOf('=')+1).trim(); break;
+            case '-n': cfg.new = x.substring(x.indexOf('=')+1).trim(); break;
             default  : console.log("chave invalida de configuracao: "+x);
                        cfg.error=true; 
                        break;
@@ -545,20 +589,108 @@ function processarParametros() {
     return cfg;
 }
 
+async function newProject(arg)
+{
+
+}
+
+async function list(arg)
+{
+    if (!arg || arg=="-l")
+        for(const AppType of await listAppTypes())
+            console.log(AppType.name);
+    else if (arg.split(",").length==1)
+    {
+        for(const layers of await listLayers(arg.trim()))
+            console.log(layers.name);
+    }
+    else if (arg.split(",").length==2)
+    {
+        const campos = arg.toLowerCase().split(",");
+        for(const technology of await listTecnologies(campos[0].trim(), campos[1].trim()))
+            console.log(technology.name,"-",technology.version);
+    }
+    else
+        console.error("parametro invalidio para listar\n",arg);
+}
+
+async function downloadParam(arg, forced, inputDir)
+{
+    const original = process.cwd();
+    console.log("download profile");
+    process.chdir(inputDir);
+    const config = openPrismaProject(inputDir);
+    const profile = await getProfile(config.profile);
+
+    for(const name in config.constants){
+        if (name.toLowerCase().startsWith('guid') && config.constants[name]=='auto')
+            config.constants[name] = uuid.v4();
+    }
+    const outputPath = path.resolve(config.outputRootPath);
+    console.log("outputPath:",outputPath);
+    process.chdir(original);
+
+    if (arg.toLowerCase()=="all")
+    {
+        for(const l of profile.layers)
+        {
+            console.log("processing layer ",l.name);
+            const baseOutputPath = path.join(outputPath, l.outputBasePath);
+            if (l.boilerplate && (forced || !fs.existsSync(baseOutputPath)))
+            {
+                console.log("create layer ",l.name);
+                if (!fs.existsSync(baseOutputPath))
+                    fs.mkdirSync(baseOutputPath,{ recursive: true });
+                await generateLayer(baseOutputPath, config.constants, l.boilerplate)
+            }
+        }
+    }
+    else if (arg.toLowerCase()=="profile")
+    {
+        console.log(JSON.stringify(profile));
+    }
+    else if (arg)
+    {
+        for(const l of profile.layers)
+        if (arg.toLowerCase()==l.name)
+        {
+            console.log("processing layer ",l.name);
+            const baseOutputPath = path.join(outputPath, l.outputBasePath);
+            if (l.boilerplate && (forced || !fs.existsSync(baseOutputPath)))
+            {
+                console.log("create layer ",l.name);
+                if (!fs.existsSync(baseOutputPath))
+                    fs.mkdirSync(baseOutputPath,{ recursive: true });
+                await generateLayer(baseOutputPath, config.constants, l.boilerplate)
+            }
+        }
+    }
+}
+
 async function main()
 {
     var config = processarParametros();
     if (config.ajuda || config.error)
     {
         console.log("node start -- <params>");
-        console.log("-h                esta ajuda");
-        console.log("-v                analise do codigo");
-        console.log("-b                build do codigo");
-        console.log("-c                limpar historico");
-        console.log("-r                recompilar tudo");
-        console.log("-y                sempre responder a sim/yes");
-        console.log("-n                sempre responder a nao/no");
-        console.log("-i=<inputdir>     diretorio do projeto a ser transpilado");
+        console.log("-h                     esta ajuda");
+        console.log("-v                     analise do codigo");
+        console.log("-b                     build do codigo");
+        console.log("-c                     limpar historico");
+        console.log("-r                     recompilar tudo");
+        console.log("-y                     sempre responder a sim/yes");
+        console.log("-n                     sempre responder a nao/no");
+        console.log("-f                     forced download")
+        console.log("-d=<boilerplat>        download specific boiler plate");
+        console.log("-d=all                 download all boiler plates");
+        console.log("-d=profile             download and show profile");
+        console.log("-l                     list all available template projects");
+        console.log("-l=<template>          list all layers name to template <template>");
+        console.log("-l=<template>,<layer>  list all tecnologies to layer <layer> in template <template>");
+        console.log("-n                     create a new project");
+        console.log("-n=<name>              create a new project with name <name>");
+        console.log("-n=<name>,<profile>    create a new project with name <name> with profile <profile>");
+        console.log("-i=<inputdir>          diretorio do projeto a ser transpilado");
         console.log('\n\n');
         return;
     }
@@ -570,7 +702,20 @@ async function main()
     if (!INPUT_PATH.endsWith(path.sep))
         INPUT_PATH = INPUT_PATH+path.sep;
 
-
+    if (config.new)
+    {
+        await newProject(config.new);
+        return;
+    } else if (config.list)
+    {
+        await list(config.list);
+        return;
+    } else if (config.download)
+    {
+        await downloadParam(config.download, config.forced, INPUT_PATH);
+        return;
+    }  
+    
     if (config.clear)
     {
         const file = path.join(INPUT_PATH,".prisma","mzdlbuild");
