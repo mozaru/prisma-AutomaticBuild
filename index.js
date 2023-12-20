@@ -703,13 +703,13 @@ async function configNewProject(arg)
         profiles = layer.technology.profiles;
         console.log(`${layer.name}: ${layer.technology.name} (${layer.technology.version})`);
     }
-    if (profiles.length==0)
+    if (!profiles || profiles.length==0)
     {
-        console.log("\n\n infelizmente nenhum profile foi encrontado!\nPortanto o projeto nao pode ser criado!\n");	
+        console.log("\n\ninfelizmente nenhum profile foi encrontado!\nPortanto o projeto nao pode ser criado!\n");	
         return null;
     } else if (profiles.length>1)
     {
-        console.log(`\n\n infelizmente ${profiles.length} profiles foram encrontados!\nPortanto o projeto nao pode ser criado!\n`);	
+        console.log(`\n\ninfelizmente ${profiles.length} profiles foram encrontados!\nPortanto o projeto nao pode ser criado!\n`);	
         return null;
     }
     const profile = profiles[0];
