@@ -17,18 +17,94 @@ var USER_NAME = process.env.PRISM_DEV_PLAT_EMAIL;
 var PASSWORD = process.env.PRISM_DEV_PLAT_PASSWORD;
 var INPUT_PATH = process.env.PRISM_DEV_PLAT_INPUT_PATH;
 var BUILD_ALL = false;
-
+var QUIET = false;
+var LIST_FORMAT = "LINE";
 const TEMP_FILE = process.env.PRISM_DEV_PLAT_TEMP_PATH?path.join(process.env.PRISM_DEV_PLAT_TEMP_PATH,'temp.zip'):'temp.zip';
 
+function logInfo(texto)
+{
+    if (!QUIET)
+        console.log(texto);
+}
+function logError(texto)
+{
+    if (!QUIET)
+        console.error(texto);
+}
+function showInfo(info)
+{
+    switch(LIST_FORMAT)
+    {
+        case "JSON": 
+            console.log(JSON.stringify(info));
+            break;
+        case "CSV":
+            if (Array.isArray(info))
+            {
+                if (info.length>0)
+                {
+                    if (typeof info[0] === 'object')
+                        for(const obj of info)
+                        {
+                            let resp="";
+                            for(const x in obj)
+                                resp = !resp ? obj[x] : resp+", "+obj[x];
+                            console.log(resp);
+                        }
+                    else
+                    {
+                        let resp="";
+                        for(const x of info)
+                            resp = !resp ? x : resp+", "+x;
+                        console.log(resp);
+                    }
+                }
+            } else if (typeof info === 'object')
+            {
+                let resp="";
+                for(const x in info)
+                    resp = !resp ? info[x] : resp+", "+info[x];
+                console.log(resp);
+            } else 
+                console.log(info);
+            break;
+        default:
+            if (Array.isArray(info))
+            {
+                if (info.length>0)
+                {
+                    if (typeof info[0] === 'object')
+                        for(const obj of info)
+                        {
+                            for(const x in obj)
+                                console.log(`${x}=${obj[x]}`);
+                            console.log();
+                        }
+                    else
+                    {
+                        for(const x of info)
+                            console.log(x);
+                    }
+                }
+            } else if (typeof info === 'object')
+            {
+                for(const x in info)
+                    console.log(`${x}=${info[x]}`);
+            } else 
+                console.log(info);
+            break;                
+    }   
+}
+
 if (!USER_NAME || !PASSWORD || !INPUT_PATH) { 
-    console.error("Falha nos parametros!");
+    logError("Falha nos parametros!");
 
-    console.log("é obrigatório configurar as variaveis de ambiente:");
-    console.log('PRISM_DEV_PLAT_EMAIL');
-    console.log('PRISM_DEV_PLAT_PASSWORD');
-    console.log('PRISM_DEV_PLAT_INPUT_PATH');
+    logError("é obrigatório configurar as variaveis de ambiente:");
+    logError('PRISM_DEV_PLAT_EMAIL');
+    logError('PRISM_DEV_PLAT_PASSWORD');
+    logError('PRISM_DEV_PLAT_INPUT_PATH');
 
-    console.log('\nOpcionalmente voce pode configurar o diretorio temporario: PRISM_DEV_PLAT_TEMP_PATH');
+    logError('\nOpcionalmente voce pode configurar o diretorio temporario: PRISM_DEV_PLAT_TEMP_PATH');
     return;
 }
 
@@ -54,7 +130,7 @@ async function downloadFile(url, outputFileName)
         })
         .pipe(file)
         .on('finish', () => {
-            console.log(`The file is finished downloading.`);
+            logInfo(`The file is finished downloading.`);
             resolve();
         })
         .on('error', (error) => {
@@ -62,7 +138,7 @@ async function downloadFile(url, outputFileName)
         })
     })
     .catch(error => {
-        console.log(`Something happened: ${error}`);
+        logError(`Something happened: ${error}`);
     });
 }
 
@@ -89,11 +165,11 @@ function extractFiles(outputdir, zipFileName, variables){
         const fullName = path.join(outputdir,zipEntry.entryName);
         if (zipEntry.isDirectory)
         {
-            console.log('filename:',fullName);
+            logInfo('filename:',fullName);
     
             if (!fs.existsSync(fullName))
             {
-                console.log('create dir:',fullName);
+                logInfo('create dir:',fullName);
                 fs.mkdirSync(fullName,{recursive: true});
             }    
         }
@@ -121,9 +197,9 @@ function extractFiles(outputdir, zipFileName, variables){
 
 async function generateLayer(outputDir, variables, url) {
     const zipFileName=TEMP_FILE;
-    console.log("download boilerplat from ",url);
+    logInfo("download boilerplat from ",url);
     await downloadFile(url, zipFileName);
-    console.log("extract files to ", outputDir);
+    logInfo("extract files to ", outputDir);
     extractFiles(outputDir, zipFileName, variables);
     fs.unlinkSync(zipFileName);
 }
@@ -265,7 +341,7 @@ function openPrismaProject(inputDir)
 
 async function analiseBuild(inputDir){
     const original = process.cwd();
-    console.log("Analisando arquivos modificados");
+    logInfo("Analisando arquivos modificados");
     process.chdir(inputDir);
     const config = openPrismaProject(inputDir);
     const profile = await getProfile(config.profile);
@@ -274,7 +350,7 @@ async function analiseBuild(inputDir){
     const dict = readBuildFile(path.join(inputDir,".prisma","mzdlbuild"))
     for(const l of profile.layers)
     {
-        console.log("analisando layer ",l.name);
+        logInfo(`analisando layer ${l.name}`);
         for(const t of l.transpilers)
         {
             if (fs.existsSync(path.join(inputDir,t.inputPath)))
@@ -346,15 +422,15 @@ async function buildProject(inputDir){
             config.constants[name] = uuid.v4();
     }
     const outputPath = path.resolve(config.outputRootPath);
-    console.log("outputPath:",outputPath);
+    logInfo(`outputPath: ${outputPath}`);
     process.chdir(original);
     for(const l of profile.layers)
     {
-        console.log("processing layer ",l.name);
+        logInfo(`processing layer ${l.name}`);
         const baseOutputPath = path.join(outputPath, l.outputBasePath);
         if (l.boilerplate && !fs.existsSync(baseOutputPath))
         {
-            console.log("create layer ",l.name);
+            logInfo(`create layer ${l.name}`);
             if (!fs.existsSync(baseOutputPath))
                 fs.mkdirSync(baseOutputPath,{ recursive: true });
             await generateLayer(baseOutputPath, config.constants, l.boilerplate)
@@ -365,9 +441,9 @@ async function buildProject(inputDir){
     let dict = readBuildFile(path.join(inputDir,".prisma","mzdlbuild"));
     for(const l of profile.layers)
     {
-        console.log("transpile layer ",l.name);
+        logInfo(`transpile layer ${l.name}`);
         for(const t of l.transpilers){
-            console.log("transpile files with: ",t.transpiler);
+            logInfo(`transpile files with: ${t.transpiler}`);
             for(const file of fs.readdirSync(path.join(inputDir,t.inputPath)))
                 if (file.endsWith('.mzdl'))
                 {
@@ -378,13 +454,13 @@ async function buildProject(inputDir){
                     if (!dict[key] || lastModify != dict[key].lastModify)
                     {
                         dict[key] = { transpiler: t.transpiler, path: relativePathFile, lastModify:lastModify};
-                        console.log("transpile file: ",file);
+                        logInfo(`transpile file: ${file}`);
                         let content = fs.readFileSync(path.join(inputDir,t.inputPath,file), 'utf-8');
                         content = includeExternalFiles(content, path.join(inputDir,t.inputPath));
                         const r = await Transpiler(content, t.transpiler, file, variaveis);
                         if (r.message)
                         {
-                            console.error(r.message);
+                            logError(r.message);
                             return;
                         }
                         variaveis = r.variaveis;
@@ -400,15 +476,15 @@ async function buildProject(inputDir){
                             let fileContent = r.files[key];
                             if (t.cached) {
                                 saveCacheFile(path.join(inputDir,".prisma"), t.transpiler, targetName, fileContent);
-                                console.log("cache file: ",path.join(baseOutputPath,targetName));
+                                logInfo(`cache file: ${path.join(baseOutputPath,targetName)}`);
                             }
                             if (t.merge) {
                                 fileContent = merge(path.join(inputDir,".prisma"), t.merge, targetName, fileContent);
                                 fs.writeFileSync(fullPathFile,fileContent,'utf-8');
-                                console.log("add content in file: ",path.join(baseOutputPath,targetName));
+                                logInfo(`add content in file: ${path.join(baseOutputPath,targetName)}`);
                             } else {
                                 fs.writeFileSync(fullPathFile,fileContent,'utf-8');
-                                console.log("generate file: ",path.join(baseOutputPath,targetName));
+                                logInfo(`generate file: ${path.join(baseOutputPath,targetName)}`);
                             }
                         }
                     }
@@ -417,7 +493,7 @@ async function buildProject(inputDir){
     }
     writeBuildFile(path.join(inputDir,".prisma","mzdlbuild"),dict);
     writeDicFile(path.join(inputDir,".prisma","vars"),variaveis);
-    console.log("Creditos: ",creditos);    
+    logInfo(`Creditos: ${creditos}`);    
 }
 
 
@@ -430,7 +506,7 @@ async function callApiPost(url, body){
         });
     })
     .catch(error => {
-        console.log(`Something happened: ${error}`);
+        logError(`Something happened: ${error}`);
     });
 }
 async function callApiGet(url){
@@ -442,20 +518,20 @@ async function callApiGet(url){
         });
     })
     .catch(error => {
-        console.log(`Something happened: ${error}`);
+        logError(`Something happened: ${error}`);
     });
 }
 
 async function login(login, password) {
-    console.log("logando:",login);
+    logInfo(`logando: ${login}`);
     const body = await callApiPost(URL_BASE+'api/login', { "Login": login, "Password":password });
     creditos = body.creditos;
     if (body && body.access_token)
     {
-        console.log("logou!");
+        logInfo("logou!");
         access_token = body.access_token;
     } else {
-        console.log("nao logou!");
+        logInfo("nao logou!");
         access_token = "";
     }
     /*await new Promise((resolve, reject) => {
@@ -464,29 +540,29 @@ async function login(login, password) {
         requestCert: true        
         }, (error, res, body) => {
             if (error) {
-              console.error(error);
+              logError(error);
               access_token="";
               reject(error);
             }
-            console.log(`statusCode: ${res.statusCode}`)
-            console.log(body);
+            logInfo(`statusCode: ${res.statusCode}`)
+            logInfo(body);
             access_token = body.access_token;
             resolve();
         });
     })
     .catch(error => {
-        console.log(`Something happened: ${error}`);
+        logError(`Something happened: ${error}`);
     });*/
 }
 
 async function getProfile(profile){
     if (!access_token)
         await login(USER_NAME,PASSWORD);
-    console.log('Baixando profile:',profile);
+    logInfo(`Baixando profile: ${profile}`);
     profile = encodeURIComponent(profile);
     let resp = await callApiGet(`${URL_BASE}api/profile/ByTechnicalName?TechnicalName=${profile}`);
     resp = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
-    console.log('Profile baixado');
+    logInfo('Profile baixado');
     return JSON.parse(resp.config);
 }
 
@@ -551,13 +627,13 @@ function mostrarConsumo(analise) {
     }
     const creditosConsumidos = transpilacoes;
     const saldo = creditos - creditosConsumidos;
-    console.log(chalk.yellow('-----------------------------------------'));
-    console.log(`Arquivos Analisados: ${files}`);
-    console.log(`Linhas Analisadas: ${linhas}`);
-    console.log(`Transpilacoes: ${transpilacoes}`);
-    console.log(`Linhas para Transpilar: ${linhastranspiladas}`);
-    console.log(`Creditos a serem consumidos: ${chalk.red(creditosConsumidos)}`);
-    console.log(`Creditos atual: ${chalk.green(creditos)}`);
+    logInfo(chalk.yellow('-----------------------------------------'));
+    logInfo(`Arquivos Analisados: ${files}`);
+    logInfo(`Linhas Analisadas: ${linhas}`);
+    logInfo(`Transpilacoes: ${transpilacoes}`);
+    logInfo(`Linhas para Transpilar: ${linhastranspiladas}`);
+    logInfo(`Creditos a serem consumidos: ${chalk.red(creditosConsumidos)}`);
+    logInfo(`Creditos atual: ${chalk.green(creditos)}`);
     let strSaldo;
     if (saldo>0)
         strSaldo = chalk.green(saldo);
@@ -565,8 +641,8 @@ function mostrarConsumo(analise) {
         strSaldo = chalk.yellow(saldo);
     else
         strSaldo = chalk.red(saldo);
-    console.log(`Creditos saldo: ${strSaldo}`);
-    console.log(chalk.yellow('-----------------------------------------'));
+    logInfo(`Creditos saldo: ${strSaldo}`);
+    logInfo(chalk.yellow('-----------------------------------------'));
     return saldo;
 }
 
@@ -590,7 +666,10 @@ function processarParametros() {
             case '-f': cfg.forced = true;break;
             case '-l': cfg.list = x.substring(x.indexOf('=')+1).trim(); break;
             case '-new': cfg.new = x.substring(x.indexOf('=')+1).trim(); break;
-            default  : console.log("chave invalida de configuracao: "+x);
+            case '-q': QUIET = true; break;
+            case '-json': LIST_FORMAT = "JSON"; break;
+            case '-csv': LIST_FORMAT = "CSV"; break;
+            default  : logError("chave invalida de configuracao: "+x);
                        cfg.error=true; 
                        break;
         }
@@ -618,7 +697,7 @@ async function createProject(project)
     const projectTechnicalName = technicalName(project.name);
     if (fs.existsSync(projectTechnicalName))
     {
-        console.log(`Diretorio ${projectTechnicalName} ja existe! o projeto não será criado!`);
+        logInfo(`Diretorio ${projectTechnicalName} ja existe! o projeto não será criado!`);
         return;
     }    
     fs.mkdirSync(projectTechnicalName);
@@ -653,13 +732,13 @@ async function createProject(project)
                 fs.mkdirSync(path.join(inputDir,t.inputPath));
         }
     }
-    console.log("Projeto criado com sucesso!");
+    logInfo("Projeto criado com sucesso!");
 }
 
 async function configNewProject(arg)
 {
     const AppTypeVet = await listAppTypes();
-    console.log("Criacao de Projeto");
+    logInfo("Criacao de Projeto");
     let i = 1;
     let resp = 0;
     let name = "";
@@ -668,17 +747,17 @@ async function configNewProject(arg)
     do{
         i = 1;
         for(const appType of AppTypeVet)
-           console.log(i++,'-',appType.name);
+            logInfo(`${i++} - ${appType.name}`);
         resp = readlineSync.question("Informe o numero do tipo do projeto ou 0 para cancelar? ").toLowerCase();
         try{resp = parseInt(resp);}catch(e){ console.log(e,resp);resp=-1};
     }while(isNaN(resp) || resp<0 || resp>=i);
     if (resp==0) return null;
     const AppType = await getAppType(AppTypeVet[resp-1].id);
-    console.log("AppType:",AppType.name);
-    console.log("Camadas:", AppType.layers.map(x => x.name).join(", "));
+    logInfo(`AppType: ${AppType.name}`);
+    logInfo(`Camadas: ${AppType.layers.map(x => x.name).join(", ")}`);
     let profiles = null;
     for(const layer of AppType.layers) {
-        console.log(`Para a camada '${layer.name}' escolha a tecnologia a ser utilizada`);
+        logInfo(`Para a camada '${layer.name}' escolha a tecnologia a ser utilizada`);
         const technologies=[];
         for(const technology of layer.technologies)
         {
@@ -694,65 +773,81 @@ async function configNewProject(arg)
         do{
             i = 1;
             for(const technology of technologies)
-               console.log(i++,'-',technology.name, "(", technology.version,")");
+            logInfo(`${i++} - ${technology.name} (${technology.version})`);
             resp = readlineSync.question(`Informe o numero da tecnologia para a camada '${layer.name}' ou 0 para cancelar? `).toLowerCase();
             try{resp = parseInt(resp);}catch(e){ console.log(e,resp);resp=-1};
         }while(isNaN(resp) || resp<0 || resp>=i);
         if (resp==0) return null;
         layer.technology = technologies[resp-1];
         profiles = layer.technology.profiles;
-        console.log(`${layer.name}: ${layer.technology.name} (${layer.technology.version})`);
+        logInfo(`${layer.name}: ${layer.technology.name} (${layer.technology.version})`);
     }
     if (!profiles || profiles.length==0)
     {
-        console.log("\n\ninfelizmente nenhum profile foi encrontado!\nPortanto o projeto nao pode ser criado!\n");	
+        logError("\n\ninfelizmente nenhum profile foi encrontado!\nPortanto o projeto nao pode ser criado!\n");	
         return null;
     } else if (profiles.length>1)
     {
-        console.log(`\n\ninfelizmente ${profiles.length} profiles foram encrontados!\nPortanto o projeto nao pode ser criado!\n`);	
+        logError(`\n\ninfelizmente ${profiles.length} profiles foram encrontados!\nPortanto o projeto nao pode ser criado!\n`);	
         return null;
     }
     const profile = profiles[0];
-    console.log("\n--------------------------------------");
-    console.log("Resumo do projeto",name);
-    console.log("--------------------------------------");
+    logInfo("\n--------------------------------------");
+    logInfo(`Resumo do projeto ${name}`);
+    logInfo("--------------------------------------");
     for(const layer of AppType.layers)
-        console.log(`${layer.name}: ${layer.technology.name} (${layer.technology.version})`);
-    console.log("--------------------------------------");
-    console.log(`profile selecionado:${profile.name}`);
-    console.log("--------------------------------------\n");
+        logInfo(`${layer.name}: ${layer.technology.name} (${layer.technology.version})`);
+    logInfo("--------------------------------------");
+    logInfo(`profile selecionado:${profile.name}`);
+    logInfo("--------------------------------------\n");
     do{
         resp = readlineSync.question(`Confirma a criacao deste projeto (S/N)? `).toLowerCase();
     }while(resp!='s' && resp!='n' && resp!='y');
     if (resp=='n') return null;
-    console.log("Criando projeto",name);
+    logInfo("Criando projeto",name);
     return { name:name, profile:profile};
 }
 
 async function list(arg)
 {
     if (!arg || arg=="-l")
+    {
+        let resp = [];
         for(const AppType of await listAppTypes())
-            console.log(AppType.name);
+            resp.push(AppType.name);
+        showInfo(resp);
+    }
     else if (arg.split(",").length==1)
     {
+        let resp = [];
         for(const layers of await listLayers(arg.trim()))
-            console.log(layers.name);
+            resp.push(layers.name);
+        showInfo(resp);
     }
     else if (arg.split(",").length==2)
     {
         const campos = arg.toLowerCase().split(",");
-        for(const technology of await listTecnologies(campos[0].trim(), campos[1].trim()))
-            console.log(technology.name,"-",technology.version);
+        if (campos[0]=='all')
+        {
+            LIST_FORMAT = "JSON";
+            const AppType = await getAppType(arg.split(",")[1]);
+            showInfo(AppType);
+        }
+        else {
+            let resp=[];
+            for(const technology of await listTecnologies(campos[0].trim(), campos[1].trim()))
+                resp.push({name:technology.name, version:technology.version});
+            showInfo(resp);
+        }
     }
     else
-        console.error("parametro invalidio para listar\n",arg);
+        logError("parametros invalidos para listar\n",arg);
 }
 
 async function downloadParam(arg, forced, inputDir)
 {
     const original = process.cwd();
-    console.log("download profile");
+    logInfo("download profile");
     process.chdir(inputDir);
     const config = openPrismaProject(inputDir);
     const profile = await getProfile(config.profile);
@@ -762,18 +857,18 @@ async function downloadParam(arg, forced, inputDir)
             config.constants[name] = uuid.v4();
     }
     const outputPath = path.resolve(config.outputRootPath);
-    console.log("outputPath:",outputPath);
+    logInfo(`outputPath: ${outputPath}`);
     process.chdir(original);
 
     if (arg.toLowerCase()=="all")
     {
         for(const l of profile.layers)
         {
-            console.log("processing layer ",l.name);
+            logInfo(`processing layer ${l.name}`);
             const baseOutputPath = path.join(outputPath, l.outputBasePath);
             if (l.boilerplate && (forced || !fs.existsSync(baseOutputPath)))
             {
-                console.log("create layer ",l.name);
+                logInfo(`create layer ${l.name}`);
                 if (!fs.existsSync(baseOutputPath))
                     fs.mkdirSync(baseOutputPath,{ recursive: true });
                 await generateLayer(baseOutputPath, config.constants, l.boilerplate)
@@ -782,18 +877,18 @@ async function downloadParam(arg, forced, inputDir)
     }
     else if (arg.toLowerCase()=="profile")
     {
-        console.log(JSON.stringify(profile));
+        showInfo(JSON.stringify(profile));
     }
     else if (arg)
     {
         for(const l of profile.layers)
         if (arg.toLowerCase()==l.name)
         {
-            console.log("processing layer ",l.name);
+            logInfo(`processing layer ${l.name}`);
             const baseOutputPath = path.join(outputPath, l.outputBasePath);
             if (l.boilerplate && (forced || !fs.existsSync(baseOutputPath)))
             {
-                console.log("create layer ",l.name);
+                logInfo(`create layer ${l.name}`);
                 if (!fs.existsSync(baseOutputPath))
                     fs.mkdirSync(baseOutputPath,{ recursive: true });
                 await generateLayer(baseOutputPath, config.constants, l.boilerplate)
@@ -807,26 +902,29 @@ async function main()
     var config = processarParametros();
     if (config.ajuda || config.error)
     {
-        console.log("node start -- <params>");
-        console.log("-h                     esta ajuda");
-        console.log("-v                     analise do codigo");
-        console.log("-b                     build do codigo");
-        console.log("-c                     limpar historico");
-        console.log("-r                     recompilar tudo");
-        console.log("-y                     sempre responder a sim/yes");
-        console.log("-n                     sempre responder a nao/no");
-        console.log("-f                     forced download")
-        console.log("-d=<boilerplat>        download specific boiler plate");
-        console.log("-d=all                 download all boiler plates");
-        console.log("-d=profile             download and show profile");
-        console.log("-l                     list all available template projects");
-        console.log("-l=<template>          list all layers name to template <template>");
-        console.log("-l=<template>,<layer>  list all tecnologies to layer <layer> in template <template>");
-        console.log("-new                     create a new project");
-        console.log("-new=<name>              create a new project with name <name>");
-        console.log("-new=<name>,<profile>    create a new project with name <name> with profile <profile>");
-        console.log("-i=<inputdir>          diretorio do projeto a ser transpilado");
-        console.log('\n\n');
+        logInfo("node start -- <params>");
+        logInfo("-h                     esta ajuda");
+        logInfo("-v                     analise do codigo");
+        logInfo("-b                     build do codigo");
+        logInfo("-c                     limpar historico");
+        logInfo("-r                     recompilar tudo");
+        logInfo("-y                     sempre responder a sim/yes");
+        logInfo("-n                     sempre responder a nao/no");
+        logInfo("-f                     forced download")
+        logInfo("-d=<boilerplat>        download specific boiler plate");
+        logInfo("-d=all                 download all boiler plates");
+        logInfo("-d=profile             download and show profile");
+        logInfo("-l                     list all available template projects");
+        logInfo("-l=<template>          list all layers name to template <template>");
+        logInfo("-l=<template>,<layer>  list all tecnologies to layer <layer> in template <template>");
+        logInfo("-new                     create a new project");
+        logInfo("-new=<name>              create a new project with name <name>");
+        logInfo("-new=<name>,<profile>    create a new project with name <name> with profile <profile>");
+        logInfo("-i=<inputdir>          diretorio do projeto a ser transpilado");
+        logInfo("-q                     modo silencioso");
+        logInfo("-json                  list em json format");
+        logInfo("-csv                   list em csv format");
+        logInfo('\n\n');
         return;
     }
     if (config.inputDir)
@@ -866,14 +964,14 @@ async function main()
 
     const r = await analiseBuild(INPUT_PATH);
     if (r.length==0){
-        console.log("Nenhum arquivo foi modificado!");
+        logError("Nenhum arquivo foi modificado!");
         return;
     }
     const saldo = mostrarConsumo(r);
     if (saldo<0)
     {
-        console.log("Creditos insuficientes para fazer a transpilacao!");
-        console.log("Para transpilar adquira mais creditos em: "+chalk.yellow('https:\\\\www.prisma.dev.br\\creditos'));
+        logError("Creditos insuficientes para fazer a transpilacao!");
+        logError("Para transpilar adquira mais creditos em: "+chalk.yellow('https:\\\\www.prisma.dev.br\\creditos'));
         return;
     }
     
