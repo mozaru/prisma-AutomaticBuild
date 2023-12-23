@@ -11,7 +11,7 @@ const { Console } = require('console');
 const chalk=require("chalk");
 
 const URL_BASE = 'https://www.prisma.dev.br/';
-//const URL_BASE = 'https://localhost:1080/';
+//const URL_BASE = 'https://localhost:1081/';
 
 var USER_NAME = process.env.PRISM_DEV_PLAT_EMAIL;
 var PASSWORD = process.env.PRISM_DEV_PLAT_PASSWORD;
@@ -337,6 +337,38 @@ function openPrismaProject(inputDir)
     const resp = fs.readFileSync(nomeConfig,'utf-8');
     const config = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
     return config;
+}
+
+async function listFiles(){
+    const inputDir = process.cwd();
+    const config = openPrismaProject(inputDir);
+    const profile = await getProfile(config.profile);
+    let response = [];
+    for(const l of profile.layers)
+    {
+        logInfo(`analisando layer ${l.name}`);
+        for(const t of l.transpilers)
+        {
+            var layerFolder = response.find( x => x.name==t.inputPath);
+            if (!layerFolder)
+            {
+                layerFolder = { name: t.inputPath, files:[] };
+                responder.push(layerFolder);
+            }
+            if (fs.existsSync(path.join(inputDir,t.inputPath)))
+                for(const file of fs.readdirSync(path.join(inputDir,t.inputPath)))
+                {
+                    if (file.endsWith('.mzdl'))
+                    {
+                        const fullPathFile = path.join(inputDir,t.inputPath,file);
+                        const relativePathFile = fullPathFile.substring(inputDir.length)
+                        if (!layerFolder.files.includes(relativePathFile))
+                            layerFolder.files.push(relativePathFile);
+                    }
+                }
+        }
+    }
+    return response;
 }
 
 async function analiseBuild(inputDir){
@@ -694,6 +726,8 @@ function gerarChave(comprimento){
 
 async function createProject(project)
 {
+    if (!access_token)
+        await login(USER_NAME,PASSWORD);
     const projectTechnicalName = technicalName(project.name);
     if (fs.existsSync(projectTechnicalName))
     {
@@ -701,7 +735,7 @@ async function createProject(project)
         return;
     }    
     fs.mkdirSync(projectTechnicalName);
-    let resp = await callApiGet(`${URL_BASE}api/profile/ByTechnicalName?TechnicalName=${encodeURIComponent(project.profile.name)}`);
+    let resp = await callApiGet(`${URL_BASE}api/profile/ByTechnicalName?TechnicalName=${encodeURIComponent(project.profileTechnicalName)}`);
     resp = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
     let configPrisma = resp.prismaProject;
     configPrisma = configPrisma
@@ -714,13 +748,18 @@ async function createProject(project)
     for(const name in configPrisma.constants){
         if (name.toLowerCase().startsWith('guid') && configPrisma.constants[name]=='auto')
             configPrisma.constants[name] = uuid.v4();
+        else if (name in project.consts)
+            configPrisma.constants[name] = project.consts[name];
     }
+
+    const fullNameProject = path.resolve(sameDir?path.join(projectTechnicalName,projectTechnicalName+".prism"):path.join(projectTechnicalName,"src-prism",projectTechnicalName+".prism"));
+
     if (sameDir)
-        fs.writeFileSync(path.join(projectTechnicalName,projectTechnicalName+".prism"), JSON.stringify(configPrisma));
+        fs.writeFileSync(fullNameProject, JSON.stringify(configPrisma));
     else
     {
         fs.mkdirSync(path.join(projectTechnicalName,"src-prism"));
-        fs.writeFileSync(path.join(projectTechnicalName,"src-prism",projectTechnicalName+".prism"), JSON.stringify(configPrisma));
+        fs.writeFileSync(fullNameProject, JSON.stringify(configPrisma));
     }
     const profile = JSON.parse(resp.config);
     const inputDir = sameDir?projectTechnicalName:path.join(projectTechnicalName,"src-prism");
@@ -733,79 +772,108 @@ async function createProject(project)
         }
     }
     logInfo("Projeto criado com sucesso!");
+    showInfo(fullNameProject);
 }
 
 async function configNewProject(arg)
 {
-    const AppTypeVet = await listAppTypes();
-    logInfo("Criacao de Projeto");
-    let i = 1;
-    let resp = 0;
-    let name = "";
-    name = readlineSync.question(`Informe o nome do projeto? `).trim();
-    if (!name) return null;
-    do{
-        i = 1;
-        for(const appType of AppTypeVet)
-            logInfo(`${i++} - ${appType.name}`);
-        resp = readlineSync.question("Informe o numero do tipo do projeto ou 0 para cancelar? ").toLowerCase();
-        try{resp = parseInt(resp);}catch(e){ console.log(e,resp);resp=-1};
-    }while(isNaN(resp) || resp<0 || resp>=i);
-    if (resp==0) return null;
-    const AppType = await getAppType(AppTypeVet[resp-1].id);
-    logInfo(`AppType: ${AppType.name}`);
-    logInfo(`Camadas: ${AppType.layers.map(x => x.name).join(", ")}`);
-    let profiles = null;
-    for(const layer of AppType.layers) {
-        logInfo(`Para a camada '${layer.name}' escolha a tecnologia a ser utilizada`);
-        const technologies=[];
-        for(const technology of layer.technologies)
+    const argv = arg.split(","); 
+    if (argv.length!=0 && argv.length!=3)
+    {
+        logError(`Formato para criacao de projeto invalido!`);
+    }
+    if (argv.length==3)
+    {
+        const name = argv[0];
+        const profileTechnicalName=argv[1];
+        const arquivoConfig=argv[2];
+        var consts = {};
+        if (!fs.existsSync(arquivoConfig))
         {
-            if (profiles==null || profiles.filter( (x) => x.id==technology.idProfile ).length == 1)
-            {
-                const tecVet = technologies.filter( (x) => x.name==technology.name && x.version==technology.version );
-                if (tecVet.length == 0)
-                    technologies.push({name:technology.name, version:technology.version, profiles:[{id:technology.idProfile, name:technology.profile}]});
-                else
-                    tecVet[0].profiles.push({id:technology.idProfile, name:technology.profile});
-            }
+            logError(`Arquivo de configuracao ${arquivoConfig} nao encontrado`);
+            return null;
         }
+        try{
+            consts = JSON.parse(fs.readFileSync(arquivoConfig,'utf-8'));
+            logInfo("Criando projeto",name);
+            return { name:name, profileTechnicalName:profileTechnicalName, consts: consts };
+        }catch(err)
+        {
+            logError(err);
+            return null;
+        }
+    }
+    else {
+        const AppTypeVet = await listAppTypes();
+        logInfo("Criacao de Projeto");
+        let i = 1;
+        let resp = 0;
+        let name = "";
+        name = readlineSync.question(`Informe o nome do projeto? `).trim();
+        if (!name) return null;
         do{
             i = 1;
-            for(const technology of technologies)
-            logInfo(`${i++} - ${technology.name} (${technology.version})`);
-            resp = readlineSync.question(`Informe o numero da tecnologia para a camada '${layer.name}' ou 0 para cancelar? `).toLowerCase();
+            for(const appType of AppTypeVet)
+                logInfo(`${i++} - ${appType.name}`);
+            resp = readlineSync.question("Informe o numero do tipo do projeto ou 0 para cancelar? ").toLowerCase();
             try{resp = parseInt(resp);}catch(e){ console.log(e,resp);resp=-1};
         }while(isNaN(resp) || resp<0 || resp>=i);
         if (resp==0) return null;
-        layer.technology = technologies[resp-1];
-        profiles = layer.technology.profiles;
-        logInfo(`${layer.name}: ${layer.technology.name} (${layer.technology.version})`);
+        const AppType = await getAppType(AppTypeVet[resp-1].id);
+        logInfo(`AppType: ${AppType.name}`);
+        logInfo(`Camadas: ${AppType.layers.map(x => x.name).join(", ")}`);
+        let profiles = null;
+        for(const layer of AppType.layers) {
+            logInfo(`Para a camada '${layer.name}' escolha a tecnologia a ser utilizada`);
+            const technologies=[];
+            for(const technology of layer.technologies)
+            {
+                if (profiles==null || profiles.filter( (x) => x.id==technology.idProfile ).length == 1)
+                {
+                    const tecVet = technologies.filter( (x) => x.name==technology.name && x.version==technology.version );
+                    if (tecVet.length == 0)
+                        technologies.push({name:technology.name, version:technology.version, profiles:[{id:technology.idProfile, name:technology.profile}]});
+                    else
+                        tecVet[0].profiles.push({id:technology.idProfile, name:technology.profile});
+                }
+            }
+            do{
+                i = 1;
+                for(const technology of technologies)
+                logInfo(`${i++} - ${technology.name} (${technology.version})`);
+                resp = readlineSync.question(`Informe o numero da tecnologia para a camada '${layer.name}' ou 0 para cancelar? `).toLowerCase();
+                try{resp = parseInt(resp);}catch(e){ console.log(e,resp);resp=-1};
+            }while(isNaN(resp) || resp<0 || resp>=i);
+            if (resp==0) return null;
+            layer.technology = technologies[resp-1];
+            profiles = layer.technology.profiles;
+            logInfo(`${layer.name}: ${layer.technology.name} (${layer.technology.version})`);
+        }
+        if (!profiles || profiles.length==0)
+        {
+            logError("\n\ninfelizmente nenhum profile foi encrontado!\nPortanto o projeto nao pode ser criado!\n");	
+            return null;
+        } else if (profiles.length>1)
+        {
+            logError(`\n\ninfelizmente ${profiles.length} profiles foram encrontados!\nPortanto o projeto nao pode ser criado!\n`);	
+            return null;
+        }
+        const profile = profiles[0];
+        logInfo("\n--------------------------------------");
+        logInfo(`Resumo do projeto ${name}`);
+        logInfo("--------------------------------------");
+        for(const layer of AppType.layers)
+            logInfo(`${layer.name}: ${layer.technology.name} (${layer.technology.version})`);
+        logInfo("--------------------------------------");
+        logInfo(`profile selecionado:${profile.name}`);
+        logInfo("--------------------------------------\n");
+        do{
+            resp = readlineSync.question(`Confirma a criacao deste projeto (S/N)? `).toLowerCase();
+        }while(resp!='s' && resp!='n' && resp!='y');
+        if (resp=='n') return null;
+        logInfo("Criando projeto",name);
+        return { name:name, profileTechnicalName:profile.name, consts:{}};
     }
-    if (!profiles || profiles.length==0)
-    {
-        logError("\n\ninfelizmente nenhum profile foi encrontado!\nPortanto o projeto nao pode ser criado!\n");	
-        return null;
-    } else if (profiles.length>1)
-    {
-        logError(`\n\ninfelizmente ${profiles.length} profiles foram encrontados!\nPortanto o projeto nao pode ser criado!\n`);	
-        return null;
-    }
-    const profile = profiles[0];
-    logInfo("\n--------------------------------------");
-    logInfo(`Resumo do projeto ${name}`);
-    logInfo("--------------------------------------");
-    for(const layer of AppType.layers)
-        logInfo(`${layer.name}: ${layer.technology.name} (${layer.technology.version})`);
-    logInfo("--------------------------------------");
-    logInfo(`profile selecionado:${profile.name}`);
-    logInfo("--------------------------------------\n");
-    do{
-        resp = readlineSync.question(`Confirma a criacao deste projeto (S/N)? `).toLowerCase();
-    }while(resp!='s' && resp!='n' && resp!='y');
-    if (resp=='n') return null;
-    logInfo("Criando projeto",name);
-    return { name:name, profile:profile};
 }
 
 async function list(arg)
@@ -819,10 +887,14 @@ async function list(arg)
     }
     else if (arg.split(",").length==1)
     {
-        let resp = [];
-        for(const layers of await listLayers(arg.trim()))
-            resp.push(layers.name);
-        showInfo(resp);
+        if (arg[0].toLowerCase().trim()=="files")
+            showInfo(listFiles());
+        else{
+            let resp = [];
+            for(const layers of await listLayers(arg.trim()))
+                resp.push(layers.name);
+            showInfo(resp);
+        }
     }
     else if (arg.split(",").length==2)
     {
@@ -838,6 +910,56 @@ async function list(arg)
             for(const technology of await listTecnologies(campos[0].trim(), campos[1].trim()))
                 resp.push({name:technology.name, version:technology.version});
             showInfo(resp);
+        }
+    }
+    else if (arg.split(",").length==3)
+    {
+        const campos = arg.toLowerCase().split(",");
+        const projectName = campos[2];
+        const projectTechnicalName = technicalName(projectName);
+        if (campos[0]=='const')
+        {
+            if (!access_token)
+                await login(USER_NAME,PASSWORD);
+            LIST_FORMAT = "JSON";
+            const profileName = campos[1];
+            let resp = await callApiGet(`${URL_BASE}api/profile/ByTechnicalName?TechnicalName=${encodeURIComponent(profileName)}`);
+            if (!resp)
+                logError(`Profile ${profileName} not found!`)
+            resp = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
+            let configPrisma = resp.prismaProject;
+            configPrisma = configPrisma
+                .replaceAll("<PROJECT_NAME>",projectName)
+                .replaceAll("<PROJECT_TECHNICAL_NAME>",projectTechnicalName)
+                .replaceAll("<USER_NAME>",USER_NAME)
+                .replaceAll("<CHAVE_OAUTH>",gerarChave(32));
+            configPrisma=JSON.parse(configPrisma)
+            for(const name in configPrisma.constants)
+                if (name.toLowerCase().startsWith('guid') && configPrisma.constants[name]=='auto')
+                    configPrisma.constants[name] = uuid.v4();
+            showInfo(configPrisma.constants);
+        }
+        else if (campos[0]=='prism')
+        {
+            if (!access_token)
+                await login(USER_NAME,PASSWORD);
+            LIST_FORMAT = "JSON";
+            const profileName = campos[1];
+            let resp = await callApiGet(`${URL_BASE}api/profile/ByTechnicalName?TechnicalName=${encodeURIComponent(profileName)}`);
+            if (!resp)
+                logError(`Profile ${profileName} not found!`)
+            resp = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
+            let configPrisma = resp.prismaProject;
+            configPrisma = configPrisma
+                .replaceAll("<PROJECT_NAME>",projectName)
+                .replaceAll("<PROJECT_TECHNICAL_NAME>",projectTechnicalName)
+                .replaceAll("<USER_NAME>",USER_NAME)
+                .replaceAll("<CHAVE_OAUTH>",gerarChave(32));
+            resp.prismaProject = JSON.parse(configPrisma);
+            showInfo(resp);
+        }
+        else {
+            logError("so aceita const ou profile como primeiro argumento");
         }
     }
     else
