@@ -353,7 +353,7 @@ async function listFiles(){
             if (!layerFolder)
             {
                 layerFolder = { name: t.inputPath, files:[] };
-                responder.push(layerFolder);
+                response.push(layerFolder);
             }
             if (fs.existsSync(path.join(inputDir,t.inputPath)))
                 for(const file of fs.readdirSync(path.join(inputDir,t.inputPath)))
@@ -887,8 +887,8 @@ async function list(arg)
     }
     else if (arg.split(",").length==1)
     {
-        if (arg[0].toLowerCase().trim()=="files")
-            showInfo(listFiles());
+        if (arg.toLowerCase().trim()=="files")
+            showInfo(await listFiles());
         else{
             let resp = [];
             for(const layers of await listLayers(arg.trim()))
