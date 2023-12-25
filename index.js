@@ -339,6 +339,29 @@ function openPrismaProject(inputDir)
     return config;
 }
 
+
+
+
+async function getEspecificationsFromProfile(profileName){
+    const profile = await getProfile(profileName);
+    let response = [];
+    for(const l of profile.layers)
+    {
+        logInfo(`analisando layer ${l.name}`);
+        const botSpecification = l.botSpecification?l.botSpecification:l.transpilers[0].transpiler.replaceAll(":",";").replaceAll("-","_").replaceAll('.',',');
+        const commands = await getCommandsSpecification(botSpecification);
+        const blockly = await getBlocklySpecifications(botSpecification);
+        response.push( { layer: l.name, botSpecification: botSpecification, commands: commands, blockly: blockly})
+    }
+    return response;
+}
+
+async function getEspecificationsFromProject(){
+    const inputDir = process.cwd();
+    const config = openPrismaProject(inputDir);
+    return getEspecificationsFromProfile(config.profile);
+}
+
 async function listFiles(){
     const inputDir = process.cwd();
     const config = openPrismaProject(inputDir);
@@ -587,6 +610,28 @@ async function login(login, password) {
     });*/
 }
 
+async function getBlocklySpecifications(botSpecification){
+    if (!access_token)
+        await login(USER_NAME,PASSWORD);
+    logInfo(`Baixando Blockly Specifications From Bot Specification: ${botSpecification}`);
+    botSpecification = encodeURIComponent(botSpecification);
+    let resp = await callApiGet(`${URL_BASE}api/mzdl/BlocklyMenu/${botSpecification}`);
+    resp = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
+    logInfo('Blockly Specifications baixado');
+    return resp;
+}
+async function getCommandsSpecification(botSpecification){
+    if (!access_token)
+        await login(USER_NAME,PASSWORD);
+    logInfo(`Baixando Commands Specification From Bot Specification: ${botSpecification}`);
+    botSpecification = encodeURIComponent(botSpecification);
+    let resp = await callApiGet(`${URL_BASE}api/mzdl/specification/${botSpecification}`);
+    resp = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
+    logInfo('Commands Specification baixado');
+    return resp;
+}
+
+
 async function getProfile(profile){
     if (!access_token)
         await login(USER_NAME,PASSWORD);
@@ -679,7 +724,7 @@ function mostrarConsumo(analise) {
 }
 
 function processarParametros() {
-    cfg = { ajuda:false, build:true, analise:false, clear:false, buildAll:false, inputDir:null, responseAll:null, download:null, list:null, new:null, forced:false, error:false }
+    cfg = { ajuda:false, build:true, analise:false, clear:false, buildAll:false, inputDir:null, responseAll:null, download:null, list:null, new:null, forced:false, error:false,info:null }
     
     for(const x of process.argv.filter((val, index) => {return index>=2} ))
     {
@@ -697,6 +742,7 @@ function processarParametros() {
             case '-d': cfg.download = x.substring(x.indexOf('=')+1).trim(); break;
             case '-f': cfg.forced = true;break;
             case '-l': cfg.list = x.substring(x.indexOf('=')+1).trim(); break;
+            case '-info': cfg.info = x.substring(x.indexOf('=')+1).trim(); break;
             case '-new': cfg.new = x.substring(x.indexOf('=')+1).trim(); break;
             case '-q': QUIET = true; break;
             case '-json': LIST_FORMAT = "JSON"; break;
@@ -1019,6 +1065,21 @@ async function downloadParam(arg, forced, inputDir)
     }
 }
 
+async function showBotEspecification(arg)
+{
+    LIST_FORMAT = "JSON";
+    if (!arg|| arg=="-info")
+    {
+        let resp = await getEspecificationsFromProject();
+        showInfo(resp);
+    }
+    else
+    {
+        let resp = await getEspecificationsFromProfile(arg);
+        showInfo(resp);
+    }
+}
+
 async function main()
 {
     var config = processarParametros();
@@ -1039,6 +1100,7 @@ async function main()
         logInfo("-l                     list all available template projects");
         logInfo("-l=<template>          list all layers name to template <template>");
         logInfo("-l=<template>,<layer>  list all tecnologies to layer <layer> in template <template>");
+        logInfo("-info=<profile>        get especification commands and blocky from project or profile");
         logInfo("-new                     create a new project");
         logInfo("-new=<name>              create a new project with name <name>");
         logInfo("-new=<name>,<profile>    create a new project with name <name> with profile <profile>");
@@ -1071,7 +1133,11 @@ async function main()
     {
         await downloadParam(config.download, config.forced, INPUT_PATH);
         return;
-    }  
+    } else if (config.info)
+    {
+        await showBotEspecification(config.info);
+        return;
+    } 
     
     if (config.clear)
     {
