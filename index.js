@@ -108,6 +108,7 @@ if (!USER_NAME || !PASSWORD || !INPUT_PATH) {
     return;
 }
 
+var infoUser={};
 var access_token = "";
 var creditos = -1;
 
@@ -341,6 +342,20 @@ function openPrismaProject(inputDir)
 
 
 
+async function getUserInfos(){
+    const subscriptions = await getSubscription()
+    return {
+        infoUser:{
+            id:infoUser.id,
+            name:infoUser.name,
+            email:infoUser.email,
+            creditos:infoUser.creditos,
+            perfil:infoUser.perfil
+        },
+        subscriptions: subscriptions
+    };
+}
+
 
 async function getEspecificationsFromProfile(profileName){
     const profile = await getProfile(profileName);
@@ -351,7 +366,7 @@ async function getEspecificationsFromProfile(profileName){
         const botSpecification = l.botSpecification?l.botSpecification:l.transpilers[0].transpiler.replaceAll(":",";").replaceAll("-","_").replaceAll('.',',');
         const commands = await getCommandsSpecification(botSpecification);
         const blockly = await getBlocklySpecifications(botSpecification);
-        response.push( { layer: l.name, botSpecification: botSpecification, commands: commands, blockly: blockly})
+        response.push( { layer: l.name, botSpecification: botSpecification,...commands, blockly: blockly})
     }
     return response;
 }
@@ -375,7 +390,7 @@ async function listFiles(){
             var layerFolder = response.find( x => x.name==t.inputPath);
             if (!layerFolder)
             {
-                layerFolder = { name: t.inputPath, files:[] };
+                layerFolder = { name:l.name, relativePath: path.join(".",path.relative(".",t.inputPath)), files:[] };
                 response.push(layerFolder);
             }
             if (fs.existsSync(path.join(inputDir,t.inputPath)))
@@ -581,6 +596,7 @@ async function login(login, password) {
     logInfo(`logando: ${login}`);
     const body = await callApiPost(URL_BASE+'api/login', { "Login": login, "Password":password });
     creditos = body.creditos;
+    infoUser = body;
     if (body && body.access_token)
     {
         logInfo("logou!");
@@ -616,9 +632,9 @@ async function getBlocklySpecifications(botSpecification){
     logInfo(`Baixando Blockly Specifications From Bot Specification: ${botSpecification}`);
     botSpecification = encodeURIComponent(botSpecification);
     let resp = await callApiGet(`${URL_BASE}api/mzdl/BlocklyMenu/${botSpecification}`);
-    resp = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
+    resp = JSON.parse(resp.replace(/\\r|\\t/g,''));
     logInfo('Blockly Specifications baixado');
-    return resp;
+    return resp.message;
 }
 async function getCommandsSpecification(botSpecification){
     if (!access_token)
@@ -626,10 +642,19 @@ async function getCommandsSpecification(botSpecification){
     logInfo(`Baixando Commands Specification From Bot Specification: ${botSpecification}`);
     botSpecification = encodeURIComponent(botSpecification);
     let resp = await callApiGet(`${URL_BASE}api/mzdl/specification/${botSpecification}`);
-    resp = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
+    resp = JSON.parse(resp.replace(/\\r|\\t/g,''));
     logInfo('Commands Specification baixado');
     return resp;
 }
+
+async function getSubscription(){
+    if (!access_token)
+        await login(USER_NAME,PASSWORD);
+    let resp = await callApiGet(`${URL_BASE}api/assinatura/subscription`);
+    resp = JSON.parse(resp.replace(/\\r|\\t/g,''));
+    return resp;
+}
+
 
 
 async function getProfile(profile){
@@ -1073,6 +1098,12 @@ async function showBotEspecification(arg)
         let resp = await getEspecificationsFromProject();
         showInfo(resp);
     }
+    else if (arg=="user")
+    {
+
+        let resp = await getUserInfos();
+        showInfo(resp);
+    }
     else
     {
         let resp = await getEspecificationsFromProfile(arg);
@@ -1101,6 +1132,7 @@ async function main()
         logInfo("-l=<template>          list all layers name to template <template>");
         logInfo("-l=<template>,<layer>  list all tecnologies to layer <layer> in template <template>");
         logInfo("-info=<profile>        get especification commands and blocky from project or profile");
+        logInfo("-info=user             get informations from current user");
         logInfo("-new                     create a new project");
         logInfo("-new=<name>              create a new project with name <name>");
         logInfo("-new=<name>,<profile>    create a new project with name <name> with profile <profile>");
