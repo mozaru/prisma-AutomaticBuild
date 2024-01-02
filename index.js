@@ -415,6 +415,9 @@ async function analiseBuild(inputDir){
     process.chdir(inputDir);
     const config = openPrismaProject(inputDir);
     const profile = await getProfile(config.profile);
+    let subscriptions = await getSubscription();
+    subscriptions = subscriptions.filter( x => x.technicalName == config.profile );
+    const plano = subscriptions.length>0?subscriptions[0].plano:"Playground";
     process.chdir(original);
     let response = [];
     const dict = readBuildFile(path.join(inputDir,".prisma","mzdlbuild"))
@@ -450,7 +453,11 @@ async function analiseBuild(inputDir){
                 }
         }
     }
-    return response;
+    return {
+        profile:config.profile,
+        subscription:plano,
+        transpiles:response
+    };
 }
 
 function ajustaMergeReferences(profile)
@@ -527,7 +534,7 @@ async function buildProject(inputDir){
                         logInfo(`transpile file: ${file}`);
                         let content = fs.readFileSync(path.join(inputDir,t.inputPath,file), 'utf-8');
                         content = includeExternalFiles(content, path.join(inputDir,t.inputPath));
-                        const r = await Transpiler(content, t.transpiler, file, variaveis);
+                        const r = await Transpiler(content, t.transpiler, file, config.profile, variaveis);
                         if (r.message)
                         {
                             logError(r.message);
@@ -668,11 +675,11 @@ async function getProfile(profile){
     return JSON.parse(resp.config);
 }
 
-async function Transpiler(source, technicalName, fileName, variaveis){
+async function Transpiler(source, technicalName, fileName, profile, variaveis){
     source = Buffer.from(source, 'utf-8').toString('base64');
     if (!access_token)
         await login(USER_NAME,PASSWORD);
-    let resp = await callApiPost(`${URL_BASE}api/transpile`,{"codeBase64":source, "TechnicalName": technicalName, "InputFileName":fileName, "variaveis":variaveis});
+    let resp = await callApiPost(`${URL_BASE}api/transpile`,{"codeBase64":source, "TechnicalName": technicalName, "InputFileName":fileName, "Profile":profile, "variaveis":variaveis});
     if (resp && resp.files)
         for(const key in resp.files)
             if (resp.files[key]==='')
@@ -721,15 +728,17 @@ function mostrarConsumo(analise) {
     let linhastranspiladas = 0;
     let transpilacoes = 0;
     let files = 0;
-    for(const x of analise) {
+    for(const x of analise.transpiles) {
         linhas += x.lines;
         transpilacoes += x.transpilations;
         linhastranspiladas += x.lines*x.transpilations;
         files++;
     }
-    const creditosConsumidos = transpilacoes;
+    const creditosConsumidos = analise.subscription=="Playground"?transpilacoes:0;
     const saldo = creditos - creditosConsumidos;
     logInfo(chalk.yellow('-----------------------------------------'));
+    logInfo(`Plano Utilizado: ${analise.subscription}`);
+    logInfo(`Team Profile Utilizado: ${analise.profile}`);
     logInfo(`Arquivos Analisados: ${files}`);
     logInfo(`Linhas Analisadas: ${linhas}`);
     logInfo(`Transpilacoes: ${transpilacoes}`);
@@ -1183,7 +1192,7 @@ async function main()
         BUILD_ALL = true;
 
     const r = await analiseBuild(INPUT_PATH);
-    if (r.length==0){
+    if (r.transpiles.length==0){
         logError("Nenhum arquivo foi modificado!");
         return;
     }
