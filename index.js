@@ -1113,6 +1113,12 @@ async function showBotEspecification(arg)
         let resp = await getUserInfos();
         showInfo(resp);
     }
+    else if (arg=="prism" || arg=="config" || arg=="solution")
+    {
+        const inputDir = process.cwd();
+        const config = openPrismaProject(inputDir);
+        showInfo(config);
+    }
     else
     {
         let resp = await getEspecificationsFromProfile(arg);
@@ -1142,6 +1148,7 @@ async function main()
         logInfo("-l=<template>,<layer>  list all tecnologies to layer <layer> in template <template>");
         logInfo("-info=<profile>        get especification commands and blocky from project or profile");
         logInfo("-info=user             get informations from current user");
+        logInfo("-info                  get informations from current project");
         logInfo("-new                     create a new project");
         logInfo("-new=<name>              create a new project with name <name>");
         logInfo("-new=<name>,<profile>    create a new project with name <name> with profile <profile>");
