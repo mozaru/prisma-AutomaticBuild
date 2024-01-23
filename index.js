@@ -216,7 +216,7 @@ async function generateLayer(outputDir, variables, url) {
 
 function includeExternalFiles(content, inputDir)
 {
-    var r = new RegExp('^\s*\<[^\>\n]+\>\s','gm');
+    var r = new RegExp('^\s*\<[^\>\n]+\>\s*$','gm');
     var match;
     var used=[];
     while (match = r.exec(content))
@@ -231,7 +231,6 @@ function includeExternalFiles(content, inputDir)
             content = content.replace(m,contentExt);
         } else 
             content = content.replace(m,'');    
-        r = new RegExp('^.*\<[^\>\n]+\>.*','gm');
     }
     return content;
 }
