@@ -5,6 +5,8 @@ const path = require('path');
 const process = require('process');
 
 
+let prismStream = console;
+
 function tryrequire(str,defaultResult){
     try{
         return require(str);
@@ -15,8 +17,7 @@ function tryrequire(str,defaultResult){
 
 const AdmZip = tryrequire('adm-zip',class {
     constructor() {
-        alert("AdmZip class not implemented!");
-        console.logError("AdmZip class not implemented!");
+        prismStream.error("AdmZip class not implemented!");
     }
     getEntries() {
         return [];
@@ -24,8 +25,7 @@ const AdmZip = tryrequire('adm-zip',class {
 });
 const uuid = tryrequire('uuid', {
     v4:function () {
-        alert("uuid method v4 not implemented!");
-        console.logError("uuid method v4 not implemented!");
+        prismStream.error("uuid method v4 not implemented!");
     }
 });
 const chalk = tryrequire("chalk", {
@@ -39,21 +39,26 @@ const URL_BASE = 'https://www.prisma.dev.br/';
 
 var USER_NAME = process.env.PRISM_DEV_PLAT_EMAIL;
 var PASSWORD = process.env.PRISM_DEV_PLAT_PASSWORD;
-var INPUT_PATH = process.env.PRISM_DEV_PLAT_INPUT_PATH;
+var INPUT_PATH = process.env.PRISM_DEV_PLAT_INPUT_PATH ?? ".";
 var BUILD_ALL = false;
 var QUIET = false;
 var LIST_FORMAT = "LINE";
 const TEMP_FILE = process.env.PRISM_DEV_PLAT_TEMP_PATH?path.join(process.env.PRISM_DEV_PLAT_TEMP_PATH,'temp.zip'):'temp.zip';
 
+function throwError(texto){
+    throw new Error(texto);
+}
+
 function logInfo(texto, forced=false)
 {
     if (!QUIET || forced)
-        console.log(texto);
+        prismStream.log(texto);
 }
-function logError(texto)
+
+function logError(erro)
 {
-    if (!QUIET)
-        console.error(texto);
+    prismStream.log(erro);
+    //prismStream.error(erro);
 }
 function showInfo(info)
 {
@@ -120,13 +125,12 @@ function showInfo(info)
     }   
 }
 
-if (!USER_NAME || !PASSWORD || !INPUT_PATH) { 
+if (!USER_NAME || !PASSWORD) { 
     logError("Falha nos parametros!");
 
     logError("é obrigatório configurar as variaveis de ambiente:");
     logError('PRISM_DEV_PLAT_EMAIL');
     logError('PRISM_DEV_PLAT_PASSWORD');
-    logError('PRISM_DEV_PLAT_INPUT_PATH');
 
     logError('\nOpcionalmente voce pode configurar o diretorio temporario: PRISM_DEV_PLAT_TEMP_PATH');
     return;
@@ -163,7 +167,7 @@ async function downloadFile(url, outputFileName)
         })
     })
     .catch(error => {
-        logError(`Something happened: ${error}`);
+        throwError(`Something happened: ${error}`);
     });
 }
 
@@ -190,11 +194,11 @@ function extractFiles(outputdir, zipFileName, variables){
         const fullName = path.join(outputdir,zipEntry.entryName);
         if (zipEntry.isDirectory)
         {
-            logInfo('filename:',fullName);
+            logInfo(`filename: ${fullName}`);
     
             if (!fs.existsSync(fullName))
             {
-                logInfo('create dir:',fullName);
+                logInfo(`create dir: ${fullName}`);
                 fs.mkdirSync(fullName,{recursive: true});
             }    
         }
@@ -222,9 +226,9 @@ function extractFiles(outputdir, zipFileName, variables){
 
 async function generateLayer(outputDir, variables, url) {
     const zipFileName=TEMP_FILE;
-    logInfo("download boilerplat from ",url);
+    logInfo(`download boilerplat from ${url}`);
     await downloadFile(url, zipFileName);
-    logInfo("extract files to ", outputDir);
+    logInfo(`extract files to ${outputDir}`);
     extractFiles(outputDir, zipFileName, variables);
     fs.unlinkSync(zipFileName);
 }
@@ -343,7 +347,7 @@ function merge(fullpath, merge, targetName, newContent)
     return newContent.join('\n');
 }
 
-function openPrismaProject(inputDir)
+function getProjectFileName(inputDir)
 {
     let configs = [];
     for(const file of fs.readdirSync(inputDir))
@@ -358,6 +362,15 @@ function openPrismaProject(inputDir)
         nomeConfig=path.join(inputDir,"prisma.json");
     else
         nomeConfig = path.join(inputDir,"config.json");
+
+    if (!fs.existsSync(nomeConfig))
+        throwError(`File Project in [${inputDir}] not found!`);
+    return nomeConfig;
+}
+
+function openPrismaProject(inputDir)
+{
+    const nomeConfig = getProjectFileName(inputDir);
     const resp = fs.readFileSync(nomeConfig,'utf-8');
     const config = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
     return config;
@@ -572,10 +585,7 @@ async function buildProject(inputDir){
                         content = includeExternalFiles(content, path.join(inputDir,t.inputPath));
                         const r = await Transpiler(content, t.transpiler, file, config.profile, variaveis);
                         if (r.message)
-                        {
-                            logError(r.message);
-                            return;
-                        }
+                            throwError(r.message);
                         variaveis = r.variaveis;
                         creditos = r.creditos;
                         
@@ -619,7 +629,7 @@ async function callApiPost(url, body){
         });
     })
     .catch(error => {
-        logError(`Something happened: ${error}`);
+        throwError(`Something happened: ${error}`);
     });
 }
 async function callApiGet(url){
@@ -631,7 +641,7 @@ async function callApiGet(url){
         });
     })
     .catch(error => {
-        logError(`Something happened: ${error}`);
+        throwError(`Something happened: ${error}`);
     });
 }
 
@@ -823,10 +833,11 @@ function processarParametros(argv) {
             case '-l': cfg.list = x.substring(x.indexOf('=')+1).trim(); break;
             case '-info': cfg.info = x.substring(x.indexOf('=')+1).trim(); break;
             case '-new': cfg.new = x.substring(x.indexOf('=')+1).trim(); break;
+            case '-changeprofile': cfg.changeProfile = x.substring(x.indexOf('=')+1).trim(); break;
             case '-q': QUIET = true; break;
             case '-json': LIST_FORMAT = "JSON"; break;
             case '-csv': LIST_FORMAT = "CSV"; break;
-            default  : logError("chave invalida de configuracao: "+x);
+            default  : throwError("chave invalida de configuracao: "+x);
                        cfg.error=true; 
                        break;
         }
@@ -855,10 +866,7 @@ async function createProject(project)
         await login(USER_NAME,PASSWORD);
     const projectTechnicalName = technicalName(project.name);
     if (fs.existsSync(projectTechnicalName))
-    {
-        logInfo(`Diretorio ${projectTechnicalName} ja existe! o projeto não será criado!`);
-        return;
-    }    
+        throwError(`O Projeto ${projectTechnicalName} ja existe!\no novo projeto não será criado!`);
     fs.mkdirSync(projectTechnicalName);
     let resp = await callApiGet(`${URL_BASE}api/profile/ByTechnicalName?TechnicalName=${encodeURIComponent(project.profileTechnicalName)}`);
     resp = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
@@ -900,12 +908,40 @@ async function createProject(project)
     showInfo(fullNameProject);
 }
 
+async function changeProfile(arg){
+    const argv = arg.split(","); 
+    if (argv.length!=1)
+    {
+        ThrowError(`Formato para troca de profile invalido!`);
+    }
+    const newProfile = argv[0];
+    const configPrisma = openPrismaProject(process.cwd());
+    const profile = await getProfile(newProfile);    
+    if (!profile)
+        ThrowError(`novo profile não encontrado!`); 
+    configPrisma.profile = newProfile
+    const fullNameProject = getProjectFileName(process.cwd());
+    
+    fs.writeFileSync(fullNameProject, JSON.stringify(configPrisma));
+    const inputDir = path.dirname(fullNameProject);
+    for(const l of profile.layers)
+    {
+        for(const t of l.transpilers)
+        {
+            if (!fs.existsSync(path.join(inputDir,t.inputPath)))
+                fs.mkdirSync(path.join(inputDir,t.inputPath));
+        }
+    }
+    logInfo("Projeto atualizado com sucesso!");
+    showInfo("Ok");
+}
+
 async function configNewProject(arg)
 {
     const argv = arg.split(","); 
     if (argv.length!=0 && argv.length!=3)
     {
-        logError(`Formato para criacao de projeto invalido!`);
+        ThrowError(`Formato para criacao de projeto invalido!`);
     }
     if (argv.length==3)
     {
@@ -914,18 +950,14 @@ async function configNewProject(arg)
         const arquivoConfig=argv[2];
         var consts = {};
         if (!fs.existsSync(arquivoConfig))
-        {
-            logError(`Arquivo de configuracao ${arquivoConfig} nao encontrado`);
-            return null;
-        }
+            throwError(`Arquivo de configuracao ${arquivoConfig} nao encontrado`);
         try{
             consts = JSON.parse(fs.readFileSync(arquivoConfig,'utf-8'));
-            logInfo("Criando projeto",name);
+            logInfo(`Criando projeto ${name}`);
             return { name:name, profileTechnicalName:profileTechnicalName, consts: consts };
         }catch(err)
         {
-            logError(err);
-            return null;
+            throwError(err);
         }
     }
     else {
@@ -976,12 +1008,10 @@ async function configNewProject(arg)
         }
         if (!profiles || profiles.length==0)
         {
-            logError("\n\ninfelizmente nenhum profile foi encrontado!\nPortanto o projeto nao pode ser criado!\n");	
-            return null;
+            throwError("\n\ninfelizmente nenhum profile foi encrontado!\nPortanto o projeto nao pode ser criado!\n");	
         } else if (profiles.length>1)
         {
-            logError(`\n\ninfelizmente ${profiles.length} profiles foram encrontados!\nPortanto o projeto nao pode ser criado!\n`);	
-            return null;
+            throwError(`\n\ninfelizmente ${profiles.length} profiles foram encrontados!\nPortanto o projeto nao pode ser criado!\n`);	
         }
         const profile = profiles[0];
         logInfo("\n--------------------------------------");
@@ -996,7 +1026,7 @@ async function configNewProject(arg)
             resp = readlineSync.question(`Confirma a criacao deste projeto (S/N)? `).toLowerCase();
         }while(resp!='s' && resp!='n' && resp!='y');
         if (resp=='n') return null;
-        logInfo("Criando projeto",name);
+        logInfo(`Criando projeto ${name}`);
         return { name:name, profileTechnicalName:profile.name, consts:{}};
     }
 }
@@ -1066,7 +1096,7 @@ async function list(arg)
             const profileName = campos[1];
             let resp = await callApiGet(`${URL_BASE}api/profile/ByTechnicalName?TechnicalName=${encodeURIComponent(profileName)}`);
             if (!resp)
-                logError(`Profile ${profileName} not found!`)
+                throwError(`Profile ${profileName} not found!`)
             resp = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
             let configPrisma = resp.prismaProject;
             configPrisma = configPrisma
@@ -1088,7 +1118,7 @@ async function list(arg)
             const profileName = campos[1];
             let resp = await callApiGet(`${URL_BASE}api/profile/ByTechnicalName?TechnicalName=${encodeURIComponent(profileName)}`);
             if (!resp)
-                logError(`Profile ${profileName} not found!`)
+                throwError(`Profile ${profileName} not found!`)
             resp = JSON.parse(resp.replace(/\\r|\\n|\\t/g,''));
             let configPrisma = resp.prismaProject;
             configPrisma = configPrisma
@@ -1100,11 +1130,11 @@ async function list(arg)
             showInfo(resp);
         }
         else {
-            logError("so aceita const ou profile como primeiro argumento");
+            throwError("so aceita const ou profile como primeiro argumento");
         }
     }
     else
-        logError("parametros invalidos para listar\n",arg);
+        throwError("parametros invalidos para listar\n"+arg.join(' | '));
 }
 
 async function downloadParam(arg, forced, inputDir)
@@ -1199,109 +1229,115 @@ async function showBotEspecification(arg)
 
 async function run(argv)
 {
-    var config = processarParametros(argv);
-    if (config.ajuda || config.error)
-    {
-        logInfo("node start -- <params>");
-        logInfo("-h                     esta ajuda");
-        logInfo("-v                     analise do codigo");
-        logInfo("-b                     build do codigo");
-        logInfo("-c                     limpar historico");
-        logInfo("-r                     recompilar tudo");
-        logInfo("-y                     sempre responder a sim/yes");
-        logInfo("-n                     sempre responder a nao/no");
-        logInfo("-f                     forced download")
-        logInfo("-d=<boilerplat>        download specific boiler plate");
-        logInfo("-d=all                 download all boiler plates");
-        logInfo("-d=profile             download and show profile");
-        logInfo("-l                     list all available template projects");
-        logInfo("-l=<template>          list all layers name to template <template>");
-        logInfo("-l=<template>,<layer>  list all tecnologies to layer <layer> in template <template>");
-        logInfo("-l=files               list all files from project");
-        logInfo("-l=profile             get informations from current profile");
-        logInfo("-l=apptype             get informations of apptype from current project");
-        logInfo("-info=<profile>        get especification commands and blocky from project or profile");
-        logInfo("-info=profile          get informations from current profile");
-        logInfo("-info=apptype          get informations of apptype from current project");
-        logInfo("-info=user             get informations from current user");
-        logInfo("-info                  get informations from current project");
-        logInfo("-new                     create a new project");
-        logInfo("-new=<name>              create a new project with name <name>");
-        logInfo("-new=<name>,<profile>    create a new project with name <name> with profile <profile>");
-        logInfo("-i=<inputdir>          diretorio do projeto a ser transpilado");
-        logInfo("-q                     modo silencioso");
-        logInfo("-json                  list em json format");
-        logInfo("-csv                   list em csv format");
-        logInfo('\n\n');
-        return;
-    }
-    if (config.inputDir)
-        INPUT_PATH = config.inputDir;
+    try{
+        var config = processarParametros(argv);
+        if (config.ajuda || config.error)
+        {
+            logInfo("node start -- <params>");
+            logInfo("-h                     esta ajuda");
+            logInfo("-v                     analise do codigo");
+            logInfo("-b                     build do codigo");
+            logInfo("-c                     limpar historico");
+            logInfo("-r                     recompilar tudo");
+            logInfo("-y                     sempre responder a sim/yes");
+            logInfo("-n                     sempre responder a nao/no");
+            logInfo("-f                     forced download")
+            logInfo("-d=<boilerplat>        download specific boiler plate");
+            logInfo("-d=all                 download all boiler plates");
+            logInfo("-d=profile             download and show profile");
+            logInfo("-l                     list all available template projects");
+            logInfo("-l=<template>          list all layers name to template <template>");
+            logInfo("-l=<template>,<layer>  list all tecnologies to layer <layer> in template <template>");
+            logInfo("-l=files               list all files from project");
+            logInfo("-l=profile             get informations from current profile");
+            logInfo("-l=apptype             get informations of apptype from current project");
+            logInfo("-info=<profile>        get especification commands and blocky from project or profile");
+            logInfo("-info=profile          get informations from current profile");
+            logInfo("-info=apptype          get informations of apptype from current project");
+            logInfo("-info=user             get informations from current user");
+            logInfo("-info                  get informations from current project");
+            logInfo("-new                     create a new project");
+            logInfo("-new=<name>              create a new project with name <name>");
+            logInfo("-new=<name>,<profile>    create a new project with name <name> with profile <profile>");
+            logInfo("-i=<inputdir>          diretorio do projeto a ser transpilado");
+            logInfo("-changeProfile=<profile> para trocar o profile do projeto");
+            logInfo("-q                     modo silencioso");
+            logInfo("-json                  list em json format");
+            logInfo("-csv                   list em csv format");
+            logInfo('\n\n');
+            return;
+        }
+        if (config.inputDir)
+            INPUT_PATH = config.inputDir;
 
-    //gambi para remover excessos de "path.sep"    
-    INPUT_PATH=path.join(INPUT_PATH);
-    if (!INPUT_PATH.endsWith(path.sep))
-        INPUT_PATH = INPUT_PATH+path.sep;
+        //gambi para remover excessos de "path.sep"    
+        INPUT_PATH=path.join(INPUT_PATH);
+        if (!INPUT_PATH.endsWith(path.sep))
+            INPUT_PATH = INPUT_PATH+path.sep;
 
-    if (config.new)
-    {
-        const project = await configNewProject(config.new);
-        if (project!=null)
-            createProject(project);
-        return;
-    } else if (config.list)
-    {
-        await list(config.list);
-        return;
-    } else if (config.download)
-    {
-        await downloadParam(config.download, config.forced, INPUT_PATH);
-        return;
-    } else if (config.info)
-    {
-        await showBotEspecification(config.info);
-        return;
-    } 
-    
-    if (config.clear)
-    {
-        const file = path.join(INPUT_PATH,".prisma","mzdlbuild");
-        if (fs.existsSync(file))
-            fs.rmSync(file);
-        return;
-    }
+        if (config.new)
+        {
+            const project = await configNewProject(config.new);
+            if (project!=null)
+                await createProject(project);
+            return;
+        } else if (config.list)
+        {
+            await list(config.list);
+            return;
+        } else if (config.download)
+        {
+            await downloadParam(config.download, config.forced, INPUT_PATH);
+            return;
+        } else if (config.info)
+        {
+            await showBotEspecification(config.info);
+            return;
+        } else if (config.changeProfile)
+        {
+            await changeProfile(config.changeProfile);
+            return;
+        }
+        
+        if (config.clear)
+        {
+            const file = path.join(INPUT_PATH,".prisma","mzdlbuild");
+            if (fs.existsSync(file))
+                fs.rmSync(file);
+            return;
+        }
 
-    if (config.buildAll)
-        BUILD_ALL = true;
+        if (config.buildAll)
+            BUILD_ALL = true;
 
-    const r = await analiseBuild(INPUT_PATH);
-    if (r.transpiles.length==0){
-        logError("Nenhum arquivo foi modificado!");
-        return;
-    }
-    const saldo = mostrarConsumo(r);
-    if (saldo<0)
-    {
-        logError("Creditos insuficientes para fazer a transpilacao!");
-        logError("Para transpilar adquira mais creditos em: "+chalk.yellow('https:\\\\www.prisma.dev.br\\creditos'));
-        return;
-    }
-    
-    if (config.build)
-    {
-        let resp;
-        if (config.responseAll==null)
-            do{
-                resp = readlineSync.question("Deseja realizar as transpilacoes (S/N)? ").toLowerCase();
-            }while(resp!="s" && resp!='n' && resp !='y');
-        else
-            resp = config.responseAll.toLowerCase();
-        if (resp=="s" || resp=="y")
-            await buildProject(INPUT_PATH);
+        const r = await analiseBuild(INPUT_PATH);
+        if (r.transpiles.length==0)
+            throwError("Nenhum arquivo foi modificado!");
+        const saldo = mostrarConsumo(r);
+        if (saldo<0)
+            throwError("Creditos insuficientes para fazer a transpilacao!\n"+
+                       "Para transpilar adquira mais creditos em: "+chalk.yellow('https:\\\\www.prisma.dev.br\\creditos'));
+        
+        if (config.build)
+        {
+            let resp;
+            if (config.responseAll==null)
+                do{
+                    resp = readlineSync.question("Deseja realizar as transpilacoes (S/N)? ").toLowerCase();
+                }while(resp!="s" && resp!='n' && resp !='y');
+            else
+                resp = config.responseAll.toLowerCase();
+            if (resp=="s" || resp=="y")
+                await buildProject(INPUT_PATH);
+        }
+    }catch(err){
+        logError(err);
     }
 }
 
 module.exports = {
-    run:run
+    run:run,
+    setPrismStream:function (obj) { prismStream=obj; },
+    setUser : function (email,password) { USER_NAME = email; PASSWORD=password }
 };
 
