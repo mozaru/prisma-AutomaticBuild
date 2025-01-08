@@ -4,8 +4,25 @@ const request = require('request');
 const path = require('path');
 const process = require('process');
 
-
 let prismStream = console;
+
+
+
+function getAllFiles(dirPath) {
+    const files = fs.readdirSync(dirPath);
+    const resp = [];
+  
+    files.forEach((file) => {
+      const fullPath = path.join(dirPath, file);
+  
+      if (fs.statSync(fullPath).isDirectory())
+        getAllFiles(fullPath).forEach( (f) => resp.push(path.join(file,f)) );
+      else
+        resp.push(file);
+    });
+  
+    return resp;
+}
 
 function tryrequire(str,defaultResult){
     try{
@@ -443,7 +460,7 @@ async function listFiles(){
                 response.push(layerFolder);
             }
             if (fs.existsSync(path.join(inputDir,t.inputPath)))
-                for(const file of fs.readdirSync(path.join(inputDir,t.inputPath)))
+                for(const file of getAllFiles(path.join(inputDir,t.inputPath)))
                 {
                     if (file.endsWith('.mzdl'))
                     {
@@ -476,7 +493,7 @@ async function analiseBuild(inputDir){
         for(const t of l.transpilers)
         {
             if (fs.existsSync(path.join(inputDir,t.inputPath)))
-                for(const file of fs.readdirSync(path.join(inputDir,t.inputPath)))
+                for(const file of getAllFiles(path.join(inputDir,t.inputPath)))
                 {
                     if (file.endsWith('.mzdl'))
                     {
@@ -570,46 +587,56 @@ async function buildProject(inputDir){
         logInfo(`transpile layer ${l.name}`);
         for(const t of l.transpilers){
             logInfo(`transpile files with: ${t.transpiler}`);
-            for(const file of fs.readdirSync(path.join(inputDir,t.inputPath)))
+            for(const file of getAllFiles(path.join(inputDir,t.inputPath)))
                 if (file.endsWith('.mzdl'))
                 {
-                    const fullPathFile = path.join(inputDir,t.inputPath,file);
-                    const relativePathFile = fullPathFile.substring(inputDir.length)
-                    const key = t.transpiler+":"+relativePathFile; 
-                    const lastModify = fs.statSync(fullPathFile).mtimeMs;
-                    if (!dict[key] || lastModify != dict[key].lastModify)
-                    {
-                        dict[key] = { transpiler: t.transpiler, path: relativePathFile, lastModify:lastModify};
-                        logInfo(`transpile file: ${file}`);
-                        let content = fs.readFileSync(path.join(inputDir,t.inputPath,file), 'utf-8');
-                        content = includeExternalFiles(content, path.join(inputDir,t.inputPath));
-                        const r = await Transpiler(content, t.transpiler, file, config.profile, variaveis);
-                        if (r.message)
-                            throwError(r.message);
-                        variaveis = r.variaveis;
-                        creditos = r.creditos;
-                        
-                        for(const key in r.files)
+                    try{
+                        const fullPathFile = path.join(inputDir,t.inputPath,file);
+                        const relativePathFile = fullPathFile.substring(inputDir.length)
+                        const key = t.transpiler+":"+relativePathFile; 
+                        const lastModify = fs.statSync(fullPathFile).mtimeMs;
+                        if (!dict[key] || lastModify != dict[key].lastModify)
                         {
-                            const targetName = key===''?(t.outputFile?t.outputFile:path.basename(file, path.extname(file))+"."+r.defaultExtension):key;
-                            const baseOutputPath = (t.outputPath===''|| !t.outputPath)?path.join(outputPath,l.outputBasePath):path.join(outputPath,l.outputBasePath, t.outputPath);
-                            if (!fs.existsSync(baseOutputPath))
-                                fs.mkdirSync(baseOutputPath,{ recursive: true });
-                            const fullPathFile = path.join(baseOutputPath,targetName);
-                            let fileContent = r.files[key];
-                            if (t.cached) {
-                                saveCacheFile(path.join(inputDir,".prisma"), t.transpiler, targetName, fileContent);
-                                logInfo(`cache file: ${path.join(baseOutputPath,targetName)}`);
-                            }
-                            if (t.merge) {
-                                fileContent = merge(path.join(inputDir,".prisma"), t.merge, targetName, fileContent);
-                                fs.writeFileSync(fullPathFile,fileContent,'utf-8');
-                                logInfo(`add content in file: ${path.join(baseOutputPath,targetName)}`);
-                            } else {
-                                fs.writeFileSync(fullPathFile,fileContent,'utf-8');
-                                logInfo(`generate file: ${path.join(baseOutputPath,targetName)}`);
+                            dict[key] = { transpiler: t.transpiler, path: relativePathFile, lastModify:lastModify};
+                            logInfo(`transpile file: ${file}`);
+                            let content = fs.readFileSync(path.join(inputDir,t.inputPath,file), 'utf-8');
+                            content = includeExternalFiles(content, path.join(inputDir,t.inputPath));
+                            const r = await Transpiler(content, t.transpiler, file, config.profile, variaveis);
+                            if (r.message)
+                                throwError(r.message);
+                            variaveis = r.variaveis;
+                            creditos = r.creditos;
+                            
+                            for(const key in r.files)
+                            {
+                                console.log(`key:${key}\nfile:${file}\nt.outputFile:${t.outputFile}\nbase:${path.basename(file, path.extname(file))}`);
+
+                                const targetName = key===''?(t.outputFile?t.outputFile:path.basename(file, path.extname(file))+"."+r.defaultExtension):key;
+                                const fileNameWithoutExt = file.replace(path.extname(file),"");
+                                const baseOutputPath = ((t.outputPath===''|| !t.outputPath)?path.join(outputPath,l.outputBasePath):path.join(outputPath,l.outputBasePath, t.outputPath)).replaceAll("%filename%",fileNameWithoutExt);
+                                console.log(`baseOutputPath:${baseOutputPath}\ntargetName:${targetName}\nt.outputFile:${t.outputFile}\nbase:${path.basename(file, path.extname(file))}`);
+                                if (!fs.existsSync(baseOutputPath))
+                                    fs.mkdirSync(baseOutputPath,{ recursive: true });
+                                const fullPathFile = path.join(baseOutputPath,targetName);
+
+                                let fileContent = r.files[key];
+                                if (t.cached) {
+                                    saveCacheFile(path.join(inputDir,".prisma"), t.transpiler, targetName, fileContent);
+                                    logInfo(`cache file: ${path.join(baseOutputPath,targetName)}`);
+                                }
+                                if (t.merge) {
+                                    fileContent = merge(path.join(inputDir,".prisma"), t.merge, targetName, fileContent);
+                                    fs.writeFileSync(fullPathFile,fileContent,'utf-8');
+                                    logInfo(`add content in file: ${path.join(baseOutputPath,targetName)}`);
+                                } else {
+                                    fs.writeFileSync(fullPathFile,fileContent,'utf-8');
+                                    logInfo(`generate file: ${path.join(baseOutputPath,targetName)}`);
+                                }
                             }
                         }
+                    }catch(error){
+                        logError(`Error: transpiling file [${file}] with bot [${t.transpiler}]`);
+                        logError(error);
                     }
                 }
         }
@@ -621,16 +648,29 @@ async function buildProject(inputDir){
 
 
 async function callApiPost(url, body){
-    return await new Promise((resolve, reject) => {
-        let stream = request.post({ url:url, json:body, rejectUnauthorized: false, requestCert: true, headers: {Authorization: access_token?`Bearer ${access_token}`:''} }, 
-            (error, res, body) => {
-            if (error) reject(error);
-            resolve(body);
-        });
-    })
-    .catch(error => {
-        throwError(`Something happened: ${error}`);
-    });
+    let error=false;
+    let tentativas = 10;
+    let lastError="";
+    do {
+        error=false;
+        tentativas--;
+        try{
+            return await new Promise((resolve, reject) => {
+                let stream = request.post({ url:url, json:body, rejectUnauthorized: false, requestCert: true, headers: {Authorization: access_token?`Bearer ${access_token}`:''} }, 
+                    (error, res, body) => {
+                    if (error) reject(error);
+                    resolve(body);
+                });
+            })
+            .catch(error => {
+                throwError(`Something happened: ${error}`);
+            });
+        }catch(err){
+            lastError = err;
+            error = true;
+        }
+    } while(error && tentativas>0);
+    throw lastError;
 }
 async function callApiGet(url){
     return await new Promise((resolve, reject) => {
@@ -1037,7 +1077,7 @@ async function list(arg)
     {
         let resp = [];
         for(const AppType of await listAppTypes())
-            resp.push(AppType.name);
+           resp.push(AppType.name);
         showInfo(resp);
     }
     else if (arg.split(",").length==1)
@@ -1218,7 +1258,8 @@ async function showBotEspecification(arg)
     {
         LIST_FORMAT = "JSON";
         const profile = await getCurrentProfile();
-        showInfo(await getAppTypeFromProfile(profile.profile));
+        const AppType = await getAppTypeFromProfile(profile.profile);
+        showInfo(AppType);
     }
     else
     {
