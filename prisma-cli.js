@@ -615,10 +615,12 @@ async function buildProject(inputDir){
                                 const fileNameWithoutExt = file.replace(path.extname(file),"");
                                 const baseOutputPath = ((t.outputPath===''|| !t.outputPath)?path.join(outputPath,l.outputBasePath):path.join(outputPath,l.outputBasePath, t.outputPath)).replaceAll("%filename%",fileNameWithoutExt);
                                 console.log(`baseOutputPath:${baseOutputPath}\ntargetName:${targetName}\nt.outputFile:${t.outputFile}\nbase:${path.basename(file, path.extname(file))}`);
-                                if (!fs.existsSync(baseOutputPath))
-                                    fs.mkdirSync(baseOutputPath,{ recursive: true });
+                                
                                 const fullPathFile = path.join(baseOutputPath,targetName);
-
+                                const dir = path.dirname(fullPathFile)
+                                if (!fs.existsSync(dir))
+                                    fs.mkdirSync(dir,{ recursive: true }
+                                
                                 let fileContent = r.files[key];
                                 if (t.cached) {
                                     saveCacheFile(path.join(inputDir,".prisma"), t.transpiler, targetName, fileContent);
